@@ -78,6 +78,10 @@ def problem_text_match(title, terms, text):
 def matched_problems(category, text):
     return [title for title, terms, _, _ in PROBLEMS[category] if problem_text_match(title, terms, text)]
 
+def normalize_rating(value):
+    value = str(value).strip()
+    return value if value in {"好评", "中评", "差评"} else ""
+
 def theme_detail(theme, rows):
     words = THEMES[theme]
     matched = rows[rows["text"].map(lambda text: any(word in text for word in words))].copy()
@@ -147,11 +151,17 @@ def build(source, output):
     missing = required.difference(raw.columns)
     if missing:
         raise ValueError(f"missing columns: {sorted(missing)}")
-    raw = raw[raw["初评"].map(usable)].copy()
+    raw["date_value"] = pd.to_datetime(raw["初评时间"], errors="coerce")
+    raw["shop"] = raw["店铺"].fillna("").astype(str).str.strip()
+    raw["category"] = raw["品类"].fillna("").astype(str).str.strip()
+    raw["rating"] = raw["评价类型"].map(normalize_rating) if "评价类型" in raw.columns else ""
+    rating_source = raw[raw["date_value"].notna() & raw["shop"].ne("") & raw["category"].ne("")].copy()
+    raw = raw[raw["初评"].map(usable) & raw["date_value"].notna()].copy()
     raw["text"] = raw["初评"].astype(str).str.strip(); raw["shop"] = raw["店铺"].astype(str).str.strip(); raw["category"] = raw["品类"].astype(str).str.strip()
-    raw["month"] = pd.to_datetime(raw["初评时间"]).map(lambda value: f"{value.year}年{value.month}月"); raw["helpful"] = pd.to_numeric(raw["有用"], errors="coerce").fillna(0)
+    raw["date"] = raw["date_value"].dt.strftime("%Y-%m-%d")
+    raw["month"] = raw["date_value"].map(lambda value: f"{value.year}年{value.month}月"); raw["helpful"] = pd.to_numeric(raw["有用"], errors="coerce").fillna(0)
     months = sorted(raw["month"].unique(), key=lambda label: tuple(map(int, re.findall(r"\d+", label))))
-    result = {"months": months, "categories": {}}
+    result = {"months": months, "minDate": rating_source["date_value"].min().strftime("%Y-%m-%d"), "maxDate": rating_source["date_value"].max().strftime("%Y-%m-%d"), "categories": {}}
     for category, theme_names in CATEGORY_THEMES.items():
         category_rows = raw[raw["category"] == category]
         shops = category_rows["shop"].value_counts().index.tolist(); segments = {}
@@ -164,11 +174,20 @@ def build(source, output):
         review_rows = []
         for _, row in category_rows.drop_duplicates("text").iterrows():
             text = row["text"]
-            review_rows.append({"text": text, "shop": row["shop"], "month": row["month"],
+            positive_terms = [word for word in POSITIVE if word in text]
+            negative_terms = [word for word in NEGATIVE if word in text]
+            review_rows.append({"text": text, "shop": row["shop"], "date": row["date"], "month": row["month"], "helpful": float(row["helpful"]),
+                                "themes": matched_labels(text, {name: THEMES[name] for name in theme_names}),
                                 "keywords": matched_labels(text, KEYWORDS), "purposes": matched_labels(text, PURPOSES),
                                 "people": matched_labels(text, PEOPLE), "scenes": matched_labels(text, SCENES),
-                                "problems": matched_problems(category, text)})
-        result["categories"][category] = {"shops": shops, "segments": segments, "reviews": review_rows}
+                                "problems": matched_problems(category, text), "positiveTerms": positive_terms,
+                                "negativeTerms": negative_terms, "positive": len(positive_terms) > len(negative_terms),
+                                "risk": bool(negative_terms)})
+        category_rating_rows = rating_source[rating_source["category"] == category]
+        rating_rows = [{"date": row["date_value"].strftime("%Y-%m-%d"), "shop": row["shop"], "rating": row["rating"]}
+                       for _, row in category_rating_rows.iterrows()]
+        rating_shops = category_rating_rows["shop"].value_counts().index.tolist()
+        result["categories"][category] = {"shops": shops, "ratingShops": rating_shops, "segments": segments, "reviews": review_rows, "ratings": rating_rows}
     target = Path(output)
     if target.suffix == ".js":
         target.write_text("window.REVIEW_FILTER_DATA=" + json.dumps(result, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
@@ -182,7 +201,7 @@ def build(source, output):
         category_script = f"window.REVIEW_CATEGORY_DATA=window.REVIEW_CATEGORY_DATA||{{}};window.REVIEW_CATEGORY_DATA[{json.dumps(name, ensure_ascii=False)}]={category_json};\n"
         (category_dir / filename).write_text(category_script, encoding="utf-8")
         files[name] = f"categories/{filename}"
-    manifest = {"months": result["months"], "categories": files}
+    manifest = {"months": result["months"], "minDate": result["minDate"], "maxDate": result["maxDate"], "categories": files}
     manifest_json = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
     (target / "manifest.js").write_text(f"window.REVIEW_MANIFEST={manifest_json};\n", encoding="utf-8")
 

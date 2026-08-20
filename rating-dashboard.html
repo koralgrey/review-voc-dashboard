@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>店铺好评率周度对比</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css?v=20260820-2">
+</head>
+<body>
+<div class="shell">
+  <header class="topbar"><div class="brand"><span class="brand-mark">V</span>类目评论洞察工作台</div><div class="source">店铺好评率周度对比 · 同品类口径<br><small>好评率仅基于已标注“好评 / 中评 / 差评”的评论，覆盖率同步披露</small></div><div class="top-actions"><button type="button" class="ghost" id="themeBtn" aria-label="切换深浅色">深色模式</button></div></header>
+  <main class="main">
+    <div class="category-shell rating-shell">
+      <aside class="card category-sidebar"><div id="ratingSidebar"><div class="loading-lines"><i></i><i></i><i></i></div></div></aside>
+      <div id="ratingDetail"><section class="card load-state" role="status"><div class="loader"></div><h2>正在加载店铺评价数据</h2></section></div>
+    </div>
+    <div class="footer">口径：原始评论行，不做文本去重；好评率 = 好评数 ÷ 已标注评价数。单店单周已标注样本少于30条时不展示率值。周定义为周一至周日，日期边界内的不完整周会单独标记。</div>
+  </main>
+</div>
+<script>window.__VOC_MANIFEST_ERROR__=false</script>
+<script src="data/manifest.js?v=20260820-2" defer onerror="window.__VOC_MANIFEST_ERROR__=true"></script>
+<script src="app.js?v=20260820-2" defer></script>
+<script src="ratings.js?v=20260820-2" defer></script>
+</body>
+</html>
