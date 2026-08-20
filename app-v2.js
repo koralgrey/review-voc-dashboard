@@ -18,7 +18,7 @@ async function load(c){
   if(loads.has(c.name))return loads.get(c.name);
   const file=manifest?.categories?.[c.name];
   if(!file)throw new Error(`缺少${c.name}数据映射`);
-  const task=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=`data/${file}?v=20260804-6`;s.onload=()=>{const p=window.REVIEW_CATEGORY_DATA?.[c.name];s.remove();if(!p)return reject(new Error(`${c.name}数据无效`));cache[c.name]=p;delete window.REVIEW_CATEGORY_DATA[c.name];resolve()};s.onerror=()=>{s.remove();reject(new Error(`${c.name}数据加载失败`))};document.head.appendChild(s)}).finally(()=>loads.delete(c.name));
+  const task=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=`data/${file}?v=20260820-1`;s.onload=()=>{const p=window.REVIEW_CATEGORY_DATA?.[c.name];s.remove();if(!p)return reject(new Error(`${c.name}数据无效`));cache[c.name]=p;delete window.REVIEW_CATEGORY_DATA[c.name];resolve()};s.onerror=()=>{s.remove();reject(new Error(`${c.name}数据加载失败`))};document.head.appendChild(s)}).finally(()=>loads.delete(c.name));
   loads.set(c.name,task);return task;
 }
 function sidebar(){
