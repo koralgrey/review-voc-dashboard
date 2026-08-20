@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build dashboard data from the 评论 sheet in the source workbook.
+"""Build dashboard data from the review sheet in the source workbook.
 
 Usage:
   python scripts/build_dashboard_data.py 评论.xlsx data
@@ -138,7 +138,11 @@ def segment(rows, theme_names):
             "co": sorted(co, key=lambda item: -item[1])[:3], "problems": problem_details(rows.iloc[0]["category"], rows), "positiveTerms": [[word, count] for word, count in positive_terms], "negativeTerms": [[word, count] for word, count in negative_terms]}
 
 def build(source, output):
-    raw = pd.read_excel(source, sheet_name="评论")
+    workbook = pd.ExcelFile(source)
+    sheet_name = next((name for name in ("天猫_评论", "评论") if name in workbook.sheet_names), None)
+    if sheet_name is None:
+        raise ValueError(f"missing review sheet: expected one of ['天猫_评论', '评论'], found {workbook.sheet_names}")
+    raw = pd.read_excel(workbook, sheet_name=sheet_name)
     required = {"店铺", "品类", "初评时间", "初评", "有用"}
     missing = required.difference(raw.columns)
     if missing:
