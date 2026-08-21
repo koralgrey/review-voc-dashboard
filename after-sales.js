@@ -342,7 +342,7 @@
     }
     const grainBtn=e.target.closest(".period-switch [data-grain]");
     if(grainBtn){state.grain=grainBtn.dataset.grain;state.range=state.grain==="week"?"recent4":"ytd";if(state.grain==="week")state.compMonth="";state.issue="";state.product="";resetDrills();refresh();return;}
-    if(e.target.closest("#themeBtn")){document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";}
+    if(e.target.closest("#themeBtn")&&!window.CS_THEME_BOUND){document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";}
   },true);
   document.addEventListener("change",e=>{
     if(e.target===rangeSelect){state.range=rangeSelect.value;state.issue="";state.product="";resetDrills();refresh();}

@@ -3,16 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>客服售后分析工作台</title>
-  <link rel="stylesheet" href="../after-sales.css?v=20260821-10">
+  <title>客服售前售后经营工作台</title>
+  <link rel="stylesheet" href="../after-sales.css?v=20260821-12">
 </head>
 <body>
   <header class="hero">
-    <div class="brand"><span class="logo">A</span><div><h1>客服售后分析工作台</h1><p>产品问题、品类售后负担与赔偿损失</p><small id="dataStatus">数据加载中…</small></div></div>
+    <div class="brand"><span class="logo">A</span><div><h1>客服售前售后经营工作台</h1><p>售前转化、服务效率、产品问题与赔偿损失</p><small id="dataStatus">数据加载中…</small></div></div>
     <button id="themeBtn" class="ghost">深色模式</button>
   </header>
 
   <main>
+    <div class="workspace-switch" aria-label="工作台切换">
+      <button data-workspace="pre" class="active">售前经营</button>
+      <button data-workspace="after">售后分析</button>
+    </div>
+
+    <section id="preSalesWorkspace">
+      <section class="filters pre-filters panel">
+        <label>平台<select id="prePlatform"></select></label>
+        <span class="arrow">›</span>
+        <label>店铺<select id="preShop"></select></label>
+        <div class="period-switch" aria-label="售前趋势粒度">
+          <button data-pre-grain="month" class="active">月度趋势</button><button data-pre-grain="week">最近4周</button>
+        </div>
+        <label>时间范围<select id="preRange"></select></label>
+      </section>
+      <nav class="pre-tabs" aria-label="售前分析模块">
+        <button data-pre-module="overview" class="active">售前经营总览</button>
+        <button data-pre-module="conversion">转化与贡献</button>
+        <button data-pre-module="service">服务效率</button>
+        <button data-pre-module="audit">数据质量</button>
+      </nav>
+      <section id="preKpis" class="kpis"></section>
+      <section id="preDashboardBody"></section>
+    </section>
+
+    <section id="afterSalesWorkspace" hidden>
     <section class="filters panel">
       <label>运营一级大类<div id="cat1Combo" class="combo"></div></label>
       <span class="arrow">›</span>
@@ -34,10 +60,11 @@
 
     <section id="kpis" class="kpis"></section>
     <section id="dashboardBody"></section>
+    </section>
   </main>
 
   <div id="tooltip" class="tooltip" role="tooltip"></div>
-  <script src="../data/after-sales-data.js?v=20260821-10"></script>
-  <script src="../after-sales.js?v=20260821-10"></script>
+  <script src="../data/pre-sales-data.js?v=20260821-12"></script>
+  <script src="../pre-sales.js?v=20260821-12"></script>
 </body>
 </html>
