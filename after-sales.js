@@ -239,7 +239,25 @@
       return `<div class="section-head"><div><h2>${safe(state.causeIssue)}：问题产品下钻</h2><p class="subtitle">选择产品后，右侧趋势图同步到该产品与问题</p></div><button class="back" data-action="cause-back">← 返回 TOP 10</button></div>`+table(["产品 / 编码","售后起数","占比","每万元售后起数","趋势"],pp.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x.product)}<br><small>${safe(x.code||"无编码")}</small></td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,sum(rr,"count"))*100).toFixed(1)}%</td><td>${Number.isFinite(x.rate)?x.rate.toFixed(2):"—"}</td><td><button class="drill" data-action="select-product" data-product="${safe(x.product)}" data-issue="${safe(state.causeIssue)}">同步趋势</button></td></tr>`));
     }
     const comparable=validComparison(periods,prev),gg=group(rows,"issue");gg.forEach(x=>{const pr=group(filtered(dataRows("issues"),prev,{product:""}).filter(r=>r.issue===x.issue),"issue")[0];x.delta=comparable?change(x.count,pr?.count||0):NaN});gg.sort((a,b)=>b.count-a.count);const top=gg.slice(0,10),max=top[0]?.count||1;
-    return `<div class="section-head"><div><h2>TOP 10 高频问题</h2><p class="subtitle">问题数量、占比与较上期变化</p></div></div>`+table(["具体问题","规模","数量","占比","较上期","下钻"],top.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x.issue)}</td><td><div class="bar"><i style="width:${x.count/max*100}%"></i></div></td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,total)*100).toFixed(1)}%</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td><button class="drill" data-action="cause-drill" data-issue="${safe(x.issue)}">产品下钻 ›</button></td></tr>`));
+    return `<div class="section-head"><div><h2>TOP 10 高频问题</h2><p class="subtitle">问题数量、占比与较上期变化；点击任一行查看二级品类与商品构成</p></div></div>`+table(["具体问题","规模","数量","占比","较上期","下钻"],top.map((x,i)=>`<tr class="click-row" data-action="cause-drill" data-issue="${safe(x.issue)}"><td><span class="rank">${i+1}</span>${safe(x.issue)}</td><td><div class="bar"><i style="width:${x.count/max*100}%"></i></div></td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,total)*100).toFixed(1)}%</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td><button class="drill" data-action="cause-drill" data-issue="${safe(x.issue)}">查看商品构成 ›</button></td></tr>`));
+  }
+
+  function reviewWeeksForCurrentSelection(){
+    const all=allPeriods("week").filter(p=>p<=maxComplete("week")),selected=periodsFor(),end=selected.at(-1);
+    if(!end)return all.slice(-4);
+    if(state.grain==="week")return all.filter(p=>p<=end).slice(-4);
+    const [year,month]=end.split("-").map(Number),monthEnd=new Date(Date.UTC(year,month,0));
+    const weekEnd=p=>{const [y,w]=p.split("-W").map(Number),jan4=new Date(Date.UTC(y,0,4)),day=jan4.getUTCDay()||7,d=new Date(jan4);d.setUTCDate(jan4.getUTCDate()-day+7+(w-1)*7);return d;};
+    return all.filter(p=>weekEnd(p)<=monthEnd).slice(-4);
+  }
+
+  function openCauseDrill(issue){
+    if(!window.DASHBOARD_MODAL)return;
+    const periods=periodsFor(),previous=previousPeriods(periods),comparable=validComparison(periods,previous),source=dataRows("issues"),weeklySource=dataRows("issues","week"),scope=r=>(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2)&&r.issue===issue;
+    const currentRows=source.filter(r=>periods.includes(r.period)&&scope(r)),previousRows=source.filter(r=>previous.includes(r.period)&&scope(r)),total=sum(currentRows,"count"),weeks=reviewWeeksForCurrentSelection(),byKey=(rows)=>{const map=new Map();rows.forEach(r=>{const key=`${r.cat2||"未分类"}|§${r.product||"未填写商品"}|§${r.code||""}`,x=map.get(key)||{cat2:r.cat2||"未分类",product:r.product||"未填写商品",code:r.code||"",count:0};x.count+=Number(r.count||0);map.set(key,x);});return map;},currentMap=byKey(currentRows),previousMap=byKey(previousRows);
+    const rows=[...currentMap.entries()].map(([key,x])=>{const last=previousMap.get(key)?.count||0,trendValues=weeks.map(p=>sum(weeklySource.filter(r=>r.period===p&&scope(r)&&r.cat2===x.cat2&&r.product===x.product&&String(r.code||"")===String(x.code||"")),"count"));return {...x,last,delta:comparable?change(x.count,last):NaN,trendValues};}).sort((a,b)=>b.count-a.count).slice(0,10);
+    const context=[state.cat1||"全部大类",state.cat2||"全部二级品类",issue].join(" › "),html=rows.length?table(["运营二级品类","商品 / 编码","售后起数","问题内占比","较上期","最近4周趋势"],rows.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x.cat2)}</td><td>${safe(x.product)}<br><small>${safe(x.code||"无编码")}</small></td><td><b>${fmt.format(x.count)}</b></td><td>${(x.count/Math.max(1,total)*100).toFixed(1)}%</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td><span class="mini-trend">${weeks.map((p,j)=>`${safe(p.slice(-3))} ${fmt.format(x.trendValues[j])}`).join(" → ")}</span></td></tr>`),"1060px"):`<div class="empty">当前筛选范围没有商品级问题数据</div>`;
+    window.DASHBOARD_MODAL.open({title:`${issue} · 二级品类商品 TOP 10`,subtitle:`${context} · 按所选周期售后起数降序`,html:`<div class="modal-summary"><span>所选周期 <b>${safe(periods.join("、"))}</b></span><span>该问题合计 <b>${fmt.format(total)} 起</b></span></div>${html}`});
   }
   function renderCause(){body.innerHTML=`<div class="grid"><article class="card">${causeTable()}</article><article class="card"><h2>问题月/周趋势</h2><h3>${safe(state.product||state.issue||state.causeIssue||"全部问题")}</h3><div class="chart-wrap">${lineChart()}</div></article></div>`;bindTooltips();}
 
@@ -359,9 +377,9 @@
     const sort=e.target.closest("[data-sort-scope]");if(sort){const s=sort.dataset.sortScope==="rate"?state.rateSort:state.compSort;s.dir=s.key===sort.dataset.sortKey?-s.dir:-1;s.key=sort.dataset.sortKey;render();return;}
     const tab=e.target.closest("[data-action-tab]");if(tab){state.actionTab=tab.dataset.actionTab;state.issue="";refresh();return;}
     const a=e.target.closest("[data-action]");if(!a)return;const act=a.dataset.action;
-    const needsProduct=act==="cause-drill"||act==="select-product"||act==="comp-reason";
+    if(act==="cause-drill"){openCauseDrill(a.dataset.issue);return;}
+    const needsProduct=act==="select-product"||act==="comp-reason";
     const needsShop=act==="jump-comp";
-    if(act==="cause-drill"){state.causeLevel="products";state.causeIssue=a.dataset.issue;state.issue=a.dataset.issue;}
     if(act==="cause-back"){state.causeLevel="issues";state.causeIssue="";state.product="";state.issue="";}
     if(act==="select-product"){state.product=a.dataset.product;state.issue=a.dataset.issue;}
     if(act==="rate-drill"){state.rateLevel="reasons";state.rateCategory={key:a.dataset.key,value:a.dataset.value};}
@@ -382,6 +400,6 @@
     if(needsShop&&!window.AFTER_SALES_SHOP_SALES){refreshControls();try{await ensureShopSalesData();salesIndexCache.clear();}catch{return;}}
     refresh();
   };
-  $("#dataStatus").textContent=`售后 ${D.meta.afterSalesMin} 至 ${D.meta.afterSalesMax} · 销售至 ${D.meta.salesMax} · ${D.meta.salesScope||"销售口径：电商渠道"} · 页面版本 v10`;
+  $("#dataStatus").textContent=`售后 ${D.meta.afterSalesMin} 至 ${D.meta.afterSalesMax} · 销售至 ${D.meta.salesMax} · ${D.meta.salesScope||"销售口径：电商渠道"} · 页面版本 v16`;
   refresh();
 })();

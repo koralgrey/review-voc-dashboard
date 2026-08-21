@@ -10,7 +10,7 @@
   const pct = n => Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(1)}%` : "—";
   const safe = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const state = {module:"overview", grain:"month", range:"ytd", platform:"", shop:""};
-  let workspace = "pre";
+  let workspace = "weekly";
   let afterSalesPromise = null;
   const loadScript = src => new Promise((resolve,reject) => { const script=document.createElement("script");script.src=src;script.onload=resolve;script.onerror=()=>reject(new Error(`加载失败：${src}`));document.head.appendChild(script); });
   function ensureAfterSales(){
@@ -18,7 +18,7 @@
     if(afterSalesPromise) return afterSalesPromise;
     $("#dataStatus").textContent="正在加载售后分析数据…";
     $("#dashboardBody").innerHTML=`<article class="card loading-card"><div class="loading-dot"></div><h2>正在加载售后数据…</h2><p class="subtitle">首次进入售后页加载，后续切换直接使用缓存。</p></article>`;
-    afterSalesPromise=loadScript("../data/after-sales-data.js?v=20260821-10").then(()=>loadScript("../after-sales.js?v=20260821-12")).catch(err=>{afterSalesPromise=null;$("#dashboardBody").innerHTML=`<article class="card"><div class="empty">${safe(err.message)}，请刷新后重试。</div></article>`;throw err;});
+    afterSalesPromise=loadScript("../data/after-sales-data.js?v=20260821-10").then(()=>loadScript("../after-sales.js?v=20260821-16")).catch(err=>{afterSalesPromise=null;$("#dashboardBody").innerHTML=`<article class="card"><div class="empty">${safe(err.message)}，请刷新后重试。</div></article>`;throw err;});
     return afterSalesPromise;
   }
 
@@ -68,10 +68,11 @@
   function renderAudit(){const d=D.audit.duplicates,r=D.audit.refundAnomalies.slice().sort((a,b)=>b.value-a.value);body.innerHTML=`<div class="grid equal"><article class="card"><h2>重复与空行备查</h2><p class="subtitle">重复日数据不自动猜测保留项，已从正式汇总剔除</p>${table(["重复键","来源行"],d.map(x=>`<tr><td>${safe(x.key)}</td><td>${x.rows.join("、")}</td></tr>`))}<div class="muted-box">另有 ${D.audit.blankRows.length} 行核心指标为空，未计入经营汇总。</div></article><article class="card"><h2>退款率异常备查</h2><p class="subtitle">原表数值大于100%，当前不用于绩效排名</p>${table(["日期 / 店铺","退款率","来源行"],r.map(x=>`<tr><td>${x.date}<br><small>${safe(x.platform)} / ${safe(x.shop)}</small></td><td class="bad">${x.value.toFixed(2)}%</td><td>${x.sourceRow}</td></tr>`))}</article></div>`;}
   function render(){renderKpis();if(state.module==="audit"){renderAudit();return;}const cfg=configs[state.module],title=state.module==="overview"?"客服工作量与咨询产值趋势":state.module==="conversion"?"询单转化与销售贡献趋势":"响应时长与服务负荷";body.innerHTML=`<div class="grid"><article class="card"><h2>${title}</h2><p class="subtitle">节点显示当期数值，悬停可看环比与同比</p>${trendChart(cfg)}</article><article class="card"><h2>${state.platform?"店铺":"平台"}经营排名</h2><p class="subtitle">默认按客服净销售额降序，同时看转化、产值和响应</p>${ranking()}</article></div><article class="card manager-insight"><h2>经营观察与改善建议</h2><ul>${insight()}</ul><div class="muted-box">询单转化率和客服销售占比由每日填报百分比反推分母后加权，适合经营趋势判断；要做精确复盘，还需要原表补充“实际询单人数”和“店铺销售额”。</div></article>`;bindTips();}
   function bindTips(){const tip=$("#tooltip");document.querySelectorAll("[data-pre-tip]").forEach(node=>{node.onmouseenter=()=>{const d=JSON.parse(node.dataset.preTip),line=(label,value,mom,yoy)=>`${label}：${value}<br>环比：${pct(mom)}${state.grain==="month"?` ｜ 同比：${pct(yoy)}`:""}`;tip.innerHTML=`<b>${safe(d.period)}${d.partial?" · 部分周期":""}</b><br>${line(d.aLabel,d.aFmt,d.aMom,d.aYoy)}<br>${line(d.bLabel,d.bFmt,d.bMom,d.bYoy)}`;tip.style.display="block";};node.onmousemove=e=>{tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY+14}px`;};node.onmouseleave=()=>tip.style.display="none";});}
-  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 已自动剔除重复日与空行 · 页面版本 v15`;else if(workspace==="weekly")$("#dataStatus").textContent=`上周复盘 · 自动选择售前、售后与销售共同完整周 · 页面版本 v15`;else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v15`;}
+  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 已自动剔除重复日与空行 · 页面版本 v16`;else if(workspace==="weekly")$("#dataStatus").textContent=`上周复盘 · 自动选择售前、售后与销售共同完整周 · 页面版本 v16`;else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v16`;}
   function refresh(){refreshControls();render();updateStatus();}
   if(!window.CS_THEME_BOUND){window.CS_THEME_BOUND=true;$("#themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";});}
   document.addEventListener("click",async e=>{const w=e.target.closest("[data-workspace]");if(w){workspace=w.dataset.workspace;pre.hidden=workspace!=="pre";weekly.hidden=workspace!=="weekly";after.hidden=workspace!=="after";document.querySelectorAll("[data-workspace]").forEach(b=>b.classList.toggle("active",b.dataset.workspace===workspace));if(workspace==="after"||workspace==="weekly"){try{await ensureAfterSales();}catch{return;}}if(workspace==="weekly")window.WEEKLY_REVIEW_APP?.render();updateStatus();return;}const m=e.target.closest("[data-pre-module]");if(m){state.module=m.dataset.preModule;refresh();return;}const g=e.target.closest("[data-pre-grain]");if(g){state.grain=g.dataset.preGrain;state.range=state.grain==="week"?"recent4":"ytd";refresh();return;}});
   document.addEventListener("change",e=>{if(e.target===platformSelect){state.platform=e.target.value;state.shop="";refresh();}if(e.target===shopSelect){state.shop=e.target.value;refresh();}if(e.target===rangeSelect){state.range=e.target.value;refresh();}});
   refresh();
+  ensureAfterSales().then(()=>{window.WEEKLY_REVIEW_APP?.render();updateStatus();}).catch(()=>{});
 })();

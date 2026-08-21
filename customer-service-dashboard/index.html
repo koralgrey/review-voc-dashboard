@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>客服售前售后经营工作台</title>
-  <link rel="stylesheet" href="../after-sales.css?v=20260821-15">
+  <link rel="stylesheet" href="../after-sales.css?v=20260821-16">
 </head>
 <body>
   <header class="hero">
@@ -14,12 +14,12 @@
 
   <main>
     <div class="workspace-switch" aria-label="工作台切换">
-      <button data-workspace="pre" class="active">售前经营</button>
-      <button data-workspace="weekly">上周复盘</button>
+      <button data-workspace="weekly" class="active">上周复盘</button>
+      <button data-workspace="pre">售前经营</button>
       <button data-workspace="after">售后分析</button>
     </div>
 
-    <section id="preSalesWorkspace">
+    <section id="preSalesWorkspace" hidden>
       <section class="filters pre-filters panel">
         <label>平台<select id="prePlatform"></select></label>
         <span class="arrow">›</span>
@@ -39,7 +39,7 @@
       <section id="preDashboardBody"></section>
     </section>
 
-    <section id="weeklyReviewWorkspace" hidden>
+    <section id="weeklyReviewWorkspace">
       <section id="weeklyReviewBody"></section>
     </section>
 
@@ -70,7 +70,8 @@
 
   <div id="tooltip" class="tooltip" role="tooltip"></div>
   <script src="../data/pre-sales-data.js?v=20260821-12"></script>
-  <script src="../weekly-review.js?v=20260821-15"></script>
-  <script src="../pre-sales.js?v=20260821-15"></script>
+  <script src="../dashboard-modal.js?v=20260821-16"></script>
+  <script src="../weekly-review.js?v=20260821-16"></script>
+  <script src="../pre-sales.js?v=20260821-16"></script>
 </body>
 </html>
