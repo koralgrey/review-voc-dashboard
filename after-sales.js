@@ -22,7 +22,7 @@
     rateSort:{key:"count",dir:-1}, compSort:{key:"paidAmount",dir:-1}, actionSort:{key:"priority",dir:-1}
   };
 
-  const DATA_VERSION = "20260821-8";
+  const DATA_VERSION = "20260821-9";
   const dataRows = (type, grain=state.grain) => {
     const key=`${type}${grain === "month" ? "Month" : "Week"}`;
     if(type==="productSales") return window.AFTER_SALES_PRODUCT_SALES?.[key] || [];
@@ -220,7 +220,7 @@
     return svg+`</svg><div class="notice">最新售后至 ${safe(D.meta.afterSalesMax)}，销售数据至 ${safe(D.meta.salesMax)}。红线看绝对数是否下降，绿线仅使用电商正向销售件数作分母，已排除经销商；2025 年售后明细始于 ${safe(D.meta.afterSalesMin)}，不完整或缺失基期的每万件、同比和环比均显示“—”。</div>`;
   }
   function bindTooltips(){
-    const tip=$("#tooltip");document.querySelectorAll(".chart-node").forEach(n=>{n.onmouseenter=e=>{const d=JSON.parse(n.dataset.tip);tip.innerHTML=`<b>${safe(d.p)}</b><br>售后数：${fmt.format(d.count)}<br>环比：${pct(d.cm)}｜同比：${pct(d.cy)}<br>每万件：${Number.isFinite(d.rate)?d.rate.toFixed(1):"—"}<br>环比：${pct(d.rm)}｜同比：${pct(d.ry)}`;tip.style.display="block";};n.onmousemove=e=>{tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY+14}px`};n.onmouseleave=()=>tip.style.display="none";});
+    const tip=$("#tooltip");document.querySelectorAll(".chart-node").forEach(n=>{n.onmouseenter=e=>{const d=JSON.parse(n.dataset.tip);tip.innerHTML=d.kind==="comp"?`<b>${safe(d.p)}</b><br>登记金额：${money(d.amount)}<br>环比：${pct(d.am)}｜同比：${pct(d.ay)}<br>实际已打款：${money(d.paid)}<br>环比：${pct(d.pm)}｜同比：${pct(d.py)}`:`<b>${safe(d.p)}</b><br>售后数：${fmt.format(d.count)}<br>环比：${pct(d.cm)}｜同比：${pct(d.cy)}<br>每万件：${Number.isFinite(d.rate)?d.rate.toFixed(1):"—"}<br>环比：${pct(d.rm)}｜同比：${pct(d.ry)}`;tip.style.display="block";};n.onmousemove=e=>{tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY+14}px`};n.onmouseleave=()=>tip.style.display="none";});
   }
   function salesShareTrend(){
     if(!state.cat1&&!state.cat2)return `<div class="muted-box">选择一级大类或二级品类后，这里显示该品类的电商销售额占比趋势。</div>`;
@@ -262,7 +262,8 @@
   const selectHtml=(id,label,value,items)=>`<label>${label}<select id="${id}">${items.map(([v,l])=>`<option value="${safe(v)}" ${v===value?"selected":""}>${safe(l)}</option>`).join("")}</select></label>`;
   function compFilterBar(){
     const all=dataRows("comp","month"),months=issuePeriods("month").slice().reverse(),platforms=group(all,"platform").sort((a,b)=>b.paidAmount-a.paidAmount).map(x=>x.platform),shops=group(all.filter(r=>!state.compPlatform||r.platform===state.compPlatform),"shop").sort((a,b)=>b.paidAmount-a.paidAmount).map(x=>x.shop);
-    return `<div class="comp-filters">${selectHtml("compMonth","登记月份",state.compMonth,[["","跟随上方时间范围"],...months.map(x=>[x,x])])}${selectHtml("compPlatform","平台",state.compPlatform,[["","全部平台"],...platforms.map(x=>[x,x])])}${selectHtml("compShop","店铺",state.compShop,[["","全部店铺"],...shops.map(x=>[x,x])])}${selectHtml("compPaymentStatus","打款状态",state.compPaymentStatus,[["","全部状态"],["已打款","已打款"],["未打款","未打款"]])}${selectHtml("compRecordType","登记类型",state.compRecordType,[["","全部类型"],["售后登记","售后登记"],["打款登记","打款登记"]])}</div>`;
+    const monthItems=state.grain==="month"?[["","跟随上方时间范围"],...months.map(x=>[x,x])]:[["","周趋势跟随上方时间范围"]];
+    return `<div class="comp-filters">${selectHtml("compMonth","登记月份",state.compMonth,monthItems)}${selectHtml("compPlatform","平台",state.compPlatform,[["","全部平台"],...platforms.map(x=>[x,x])])}${selectHtml("compShop","店铺",state.compShop,[["","全部店铺"],...shops.map(x=>[x,x])])}${selectHtml("compPaymentStatus","打款状态",state.compPaymentStatus,[["","全部状态"],["已打款","已打款"],["未打款","未打款"]])}${selectHtml("compRecordType","登记类型",state.compRecordType,[["","全部类型"],["售后登记","售后登记"],["打款登记","打款登记"]])}</div>`;
   }
   function compTable(){
     const periods=compPeriods(),completePeriods=eligible(periods),base=filteredComp(dataRows("comp"),periods,{product:""}),eligibleBase=filteredComp(dataRows("comp"),completePeriods,{product:""}),prev=previousPeriods(periods),prevRows=validComparison(periods,prev)?filteredComp(dataRows("comp"),prev,{product:""}):[];let rows,title,back="",nextAction="",key,scopeRows=base,scopeEligible=eligibleBase,scopePrev=prevRows;
@@ -277,12 +278,24 @@
     rows.sort((a,b)=>(a[state.compSort.key]||0)-(b[state.compSort.key]||0));if(state.compSort.dir<0)rows.reverse();
     return `<div class="section-head"><div><h2>${safe(title)}</h2><p class="subtitle">默认按实际已打款金额降序，销售额口径仅含电商渠道</p></div>${back}</div>${sortControls("comp",state.compSort,[["paidAmount","已打款金额"],["amount","登记金额"],["count","记录数"],["compRate","赔付率"],["delta","较上期"]])}`+table([state.compLevel==="products"?"产品 / 编码":"平台 / 店铺 / 品类 / 原因","登记金额","已打款金额","记录数","已打款笔数","单笔实付","最大单笔","实付占比","电商销售额","经营期赔付率","较上期","下钻"],rows.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x.name)}${x.code?`<br><small>${safe(x.code)}</small>`:""}</td><td>${money(x.amount)}</td><td>${money(x.paidAmount)}</td><td>${fmt.format(x.count)}</td><td>${fmt.format(x.paidCount)}</td><td>${x.paidCount?money(x.paidAvg):"—"}</td><td>${money(x.maxSingle)}</td><td>${x.share.toFixed(1)}%</td><td>${Number.isFinite(x.salesAmount)?money(x.salesAmount):"—"}</td><td>${Number.isFinite(x.compRate)?`${x.compRate.toFixed(3)}%`:"—"}</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td>${nextAction?`<button class="drill" data-action="${nextAction}" data-value="${safe(x.name)}" data-shop-key="${safe(x.shopKey)}">下钻 ›</button>`:"—"}</td></tr>`),"1480px")+`<div class="muted-box">登记金额是原表填写值；已打款金额仅统计有明确打款时间的记录。经营期赔付率 = 已打款金额 ÷ 同期电商销售额；店铺产品销售编码未完整对齐时，产品层赔付率显示“—”。</div>`;
   }
+  function compTrendChart(){
+    const periods=compPeriods(),rows=dataRows("comp"),values=periods.map(p=>{const x=filteredComp(rows,[p]);return {amount:sum(x,"amount"),paid:sum(x,"paidAmount")}});
+    if(!periods.length)return `<h2>赔偿金额趋势</h2><div class="empty">当前筛选无趋势数据</div>`;
+    const all=allPeriods(),metricCache=new Map(periods.map((p,i)=>[p,values[i]])),metricAt=p=>{if(metricCache.has(p))return metricCache.get(p);const x=filteredComp(rows,[p]),v={amount:sum(x,"amount"),paid:sum(x,"paidAmount")};metricCache.set(p,v);return v},prior=(p,offset)=>{const i=all.indexOf(p);return i>=offset?all[i-offset]:""},compared=(p,v,offset,key)=>{const q=prior(p,offset);if(!q||p===periodInfo().currentPartial||q===periodInfo().firstPartial)return NaN;return change(v,metricAt(q)[key])};
+    const W=1000,H=330,L=70,R=45,T=55,B=50,iw=W-L-R,ih=H-T-B,max=Math.max(1,...values.flatMap(x=>[x.amount,x.paid])),x=i=>L+(periods.length===1?iw/2:i*iw/(periods.length-1)),y=v=>T+ih-v/max*ih,path=(key)=>values.map((v,i)=>`${i?"L":"M"}${x(i)},${y(v[key])}`).join(" "),scope=[state.compPlatform,state.compShop,state.compPaymentStatus,state.compRecordType].filter(Boolean).join(" · ")||"全部平台与店铺";
+    let svg=`<div class="section-head"><div><h2>赔偿金额${state.grain==="month"?"月度":"周度"}趋势</h2><p class="subtitle">${safe(scope)}，跟随当前时间及品类筛选</p></div></div><div class="legend"><span><i></i>红色实线：登记金额</span><span><i class="green"></i>绿色虚线：实际已打款</span></div><svg class="trend-svg comp-trend" viewBox="0 0 ${W} ${H}">`;
+    for(let i=0;i<4;i++){const gy=T+i*ih/3;svg+=`<line x1="${L}" y1="${gy}" x2="${W-R}" y2="${gy}" stroke="var(--line)"/>`}
+    svg+=`<text x="${L}" y="${T-12}" fill="var(--muted)" font-size="12">金额 0–${money(max)}</text><path d="${path("amount")}" fill="none" stroke="var(--red)" stroke-width="4"/><path d="${path("paid")}" fill="none" stroke="var(--green)" stroke-width="4" stroke-dasharray="10 8"/>`;
+    periods.forEach((p,i)=>{const v=values[i],offset=state.grain==="month"?12:52,tip=safe(JSON.stringify({kind:"comp",p,amount:v.amount,paid:v.paid,am:compared(p,v.amount,1,"amount"),ay:compared(p,v.amount,offset,"amount"),pm:compared(p,v.paid,1,"paid"),py:compared(p,v.paid,offset,"paid")}));svg+=`<text x="${x(i)}" y="${H-16}" text-anchor="middle" fill="var(--muted)" font-size="13">${safe(p.replace(/^\d{4}-/,""))}</text><g class="chart-node" data-tip="${tip}"><circle cx="${x(i)}" cy="${y(v.amount)}" r="6" fill="white" stroke="var(--red)" stroke-width="4"/><text x="${x(i)}" y="${Math.max(18,y(v.amount)-12)}" text-anchor="middle" fill="var(--red)" font-weight="800" font-size="11">${money(v.amount)}</text></g><g class="chart-node" data-tip="${tip}"><circle cx="${x(i)}" cy="${y(v.paid)}" r="6" fill="white" stroke="var(--green)" stroke-width="4"/><text x="${x(i)}" y="${Math.min(H-B+27,y(v.paid)+20)}" text-anchor="middle" fill="var(--green)" font-weight="800" font-size="11">${money(v.paid)}</text></g>`});
+    const single=periods.length===1?`<div class="muted-box">当前只选中 1 个周期，因此图中为单节点；取消“登记月份”单月筛选即可查看连续趋势。</div>`:"";
+    return svg+`</svg>${single}`;
+  }
   function auditTable(){
     const periods=new Set(compPeriods()),periodKey=state.grain==="month"?"periodMonth":"periodWeek";
     const rows=D.compensationAudit.filter(a=>periods.has(a[periodKey])&&(!state.cat1||a.cat1===state.cat1)&&(!state.cat2||a.cat2===state.cat2)&&(!state.compPlatform||a.platform===state.compPlatform)&&(!state.compShop||a.shop===state.compShop)&&(!state.compPaymentStatus||a.paymentStatus===state.compPaymentStatus)&&(!state.compRecordType||a.recordType===state.compRecordType));
-    return `<h2>金额异常备查</h2><p class="subtitle">疑似小数点/单位录入错误，不计入正式合计</p>`+(rows.length?table(["店铺 / 产品","金额","原因","来源行"],rows.map(a=>`<tr><td>${safe(a.shop||"未填写")}<br>${safe(a.product)}<br><small>${safe(a.code)}</small></td><td class="bad">${money(a.amount)}</td><td>${safe(a.reason)}</td><td>${safe(a.sourceRow)}</td></tr>`)):"<div class='empty'>当前筛选未发现录入异常</div>");
+    return `<div class="audit-section"><h2>金额异常备查</h2><p class="subtitle">只显示疑似小数点/单位录入错误且已从正式合计剔除的记录；无数据代表当前筛选未发现异常</p>`+(rows.length?table(["店铺 / 产品","金额","原因","来源行"],rows.map(a=>`<tr><td>${safe(a.shop||"未填写")}<br>${safe(a.product)}<br><small>${safe(a.code)}</small></td><td class="bad">${money(a.amount)}</td><td>${safe(a.reason)}</td><td>${safe(a.sourceRow)}</td></tr>`)):"<div class='empty compact-empty'>当前筛选未发现录入异常，这是正常结果</div>")+`</div>`;
   }
-  function renderComp(){body.innerHTML=compFilterBar()+`<div class="grid comp-grid"><article class="card">${compTable()}</article><article class="card">${auditTable()}</article></div>`;}
+  function renderComp(){body.innerHTML=compFilterBar()+`<div class="grid comp-grid"><article class="card">${compTable()}</article><article class="card">${compTrendChart()}${auditTable()}</article></div>`;bindTooltips();}
 
   function aggregateProductIssues(periods){
     const rows=filtered(dataRows("issues"),periods,{product:""}), rateRows=filtered(dataRows("issues"),eligible(periods),{product:""}), comps=filtered(dataRows("comp"),periods,{product:""}), prev=previousPeriods(periods), prevRows=filtered(dataRows("issues"),prev,{product:""});const map=new Map(), rateMap=new Map();
@@ -314,7 +327,7 @@
       refresh();return;
     }
     const grainBtn=e.target.closest(".period-switch [data-grain]");
-    if(grainBtn){state.grain=grainBtn.dataset.grain;state.range=state.grain==="week"?"recent4":"ytd";state.issue="";state.product="";resetDrills();refresh();return;}
+    if(grainBtn){state.grain=grainBtn.dataset.grain;state.range=state.grain==="week"?"recent4":"ytd";if(state.grain==="week")state.compMonth="";state.issue="";state.product="";resetDrills();refresh();return;}
     if(e.target.closest("#themeBtn")){document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";}
   },true);
   document.addEventListener("change",e=>{
@@ -355,6 +368,6 @@
     if(needsShop&&!window.AFTER_SALES_SHOP_SALES){refreshControls();try{await ensureShopSalesData();salesIndexCache.clear();}catch{return;}}
     refresh();
   };
-  $("#dataStatus").textContent=`售后 ${D.meta.afterSalesMin} 至 ${D.meta.afterSalesMax} · 销售至 ${D.meta.salesMax} · ${D.meta.salesScope||"销售口径：电商渠道"} · 页面版本 v8`;
+  $("#dataStatus").textContent=`售后 ${D.meta.afterSalesMin} 至 ${D.meta.afterSalesMax} · 销售至 ${D.meta.salesMax} · ${D.meta.salesScope||"销售口径：电商渠道"} · 页面版本 v9`;
   refresh();
 })();
