@@ -92,4 +92,3 @@
 @media(max-width:1300px){.attention-lower{grid-template-columns:1fr}.focus-review-list{height:230px}.taxonomy-card>div{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:820px){.attention-category-list{display:flex;max-height:none;overflow:auto}.attention-category-list .cat-button{min-width:130px}.focus-checks{grid-template-columns:repeat(2,minmax(0,1fr));max-height:220px}.focus-evidence .section-head{flex-direction:column}.focus-summary{grid-template-columns:1fr 1fr}.taxonomy-card{display:block}.taxonomy-card>b{display:block;margin-bottom:9px}.taxonomy-card>p{margin-top:9px}.attention-lower{display:block}.attention-lower>.card{margin-bottom:12px}}
 @media(max-width:520px){.focus-checks{grid-template-columns:1fr}.focus-summary{grid-template-columns:1fr}.focus-detail-tags{grid-column:auto}.taxonomy-card>div{grid-template-columns:1fr}.attention-canvas-wrap{height:310px}}
-.page-switch{grid-template-columns:repeat(4,1fr)}
