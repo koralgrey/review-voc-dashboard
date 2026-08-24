@@ -4,7 +4,7 @@
   if (!D) return;
 
   const $ = selector => document.querySelector(selector);
-  const pre = $("#preSalesWorkspace"), weekly = $("#weeklyReviewWorkspace"), after = $("#afterSalesWorkspace");
+  const pre = $("#preSalesWorkspace"), weekly = $("#weeklyReviewWorkspace"), after = $("#afterSalesWorkspace"), returns = $("#returnRefundWorkspace");
   const kpis = $("#preKpis"), body = $("#preDashboardBody");
   const platformSelect = $("#prePlatform"), shopSelect = $("#preShop"), startSelect = $("#preStart"), endSelect = $("#preEnd"), scope = $("#preScope");
   const fmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
@@ -12,7 +12,7 @@
   const pct = value => Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(1)}%` : "—";
   const safe = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
   const state = { page:"analysis", grain:"month", start:"", end:"", platform:"", shop:"", metric:"sales", radarMode:"platform" };
-  let workspace = "weekly", afterSalesPromise = null;
+  let workspace = "weekly", afterSalesPromise = null, returnRefundPromise = null;
 
   const loadScript = src => new Promise((resolve, reject) => {
     const script = document.createElement("script"); script.src = src; script.onload = resolve;
@@ -29,6 +29,18 @@
       throw error;
     });
     return afterSalesPromise;
+  }
+  function ensureReturnRefund() {
+    if (window.RETURN_REFUND_APP) return Promise.resolve();
+    if (returnRefundPromise) return returnRefundPromise;
+    $("#dataStatus").textContent = "正在加载退货退款分析数据…";
+    $("#returnDashboardBody").innerHTML = `<article class="card loading-card"><div class="loading-dot"></div><h2>正在加载退货退款数据…</h2><p class="subtitle">SKU明细仅在首次进入本页时加载，后续切换直接使用缓存。</p></article>`;
+    returnRefundPromise = loadScript("../data/return-refund-data.js?v=20260824-20").then(() => loadScript("../returns.js?v=20260824-20")).catch(error => {
+      returnRefundPromise = null;
+      $("#returnDashboardBody").innerHTML = `<article class="card"><div class="empty">${safe(error.message)}，请刷新后重试。</div></article>`;
+      throw error;
+    });
+    return returnRefundPromise;
   }
 
   const rows = () => state.grain === "month" ? D.month : D.week;
@@ -100,6 +112,16 @@
     refund:{ label:"退款率", key:"refund", format:value=>Number.isFinite(value)?`${value.toFixed(2)}%`:"—", short:value=>`${value.toFixed(1)}%`, note:"异常值不纳入汇总", inverse:true }
   };
   const metric = () => metrics[state.metric];
+  function metricCardDisplay(id, value, definition) {
+    const full = definition.format(value);
+    if (!Number.isFinite(value)) return {display:full, full};
+    if (id === "sales") {
+      if (Math.abs(value) >= 100000000) return {display:`¥${(value / 100000000).toFixed(2)}亿`, full};
+      if (Math.abs(value) >= 10000) return {display:`¥${(value / 10000).toFixed(1)}万`, full};
+    }
+    if (["consult", "converted"].includes(id) && Math.abs(value) >= 10000000) return {display:`${(value / 10000).toFixed(1)}万人`, full};
+    return {display:full, full};
+  }
 
   function refreshControls() {
     const all = periods();
@@ -127,7 +149,8 @@
       const value = current[definition.key]; let note = definition.note;
       if (id === "refund" && !Number.isFinite(value)) note = `${D.meta.refundAnomalies}条异常，暂不汇总`;
       else if (comparable && Number.isFinite(value)) note = `较前期 ${pct(change(value, previous[definition.key]))}`;
-      return `<button class="pre-metric-card ${state.metric===id?"active":""}" data-pre-metric="${id}"><span>${definition.label}</span><strong>${definition.format(value)}</strong><small>${note}</small></button>`;
+      const shown = metricCardDisplay(id, value, definition);
+      return `<button class="pre-metric-card ${state.metric===id?"active":""}" data-pre-metric="${id}" title="${safe(definition.label)}：${safe(shown.full)}"><span>${definition.label}</span><strong class="pre-metric-value">${safe(shown.display)}</strong><small>${note}${shown.display!==shown.full?` · 悬停看完整值`:""}</small></button>`;
     }).join("");
   }
 
@@ -220,7 +243,8 @@
   function detailTable() {const items=[...new Set(filtered().map(row=>row.s))].map(shop=>({shop,platform:filtered().find(row=>row.s===shop)?.pf||"",values:combine(filtered(selectedPeriods(),{shop}))})).sort((a,b)=>b.values.sales-a.values.sales);return table(["平台 / 店铺","咨询人数","销售额(去退)","销售占比","成交人数","转化率","首次响应","平均响应","退款率"],items.map(item=>`<tr class="click-row" data-pre-platform="${safe(item.platform)}" data-pre-shop="${safe(item.shop)}"><td>${safe(item.platform)}<br><strong>${safe(item.shop)}</strong></td><td>${fmt.format(item.values.consult)}</td><td>${money(item.values.sales)}</td><td>${Number.isFinite(item.values.salesShare)?`${item.values.salesShare.toFixed(1)}%`:"—"}</td><td>${fmt.format(item.values.converted)}</td><td>${Number.isFinite(item.values.conversion)?`${item.values.conversion.toFixed(1)}%`:"—"}</td><td>${Number.isFinite(item.values.first)?`${item.values.first.toFixed(1)}秒`:"—"}</td><td>${Number.isFinite(item.values.avg)?`${item.values.avg.toFixed(1)}秒`:"—"}</td><td>${Number.isFinite(item.values.refund)?`${item.values.refund.toFixed(1)}%`:"—"}</td></tr>`),"1180px");}
   function keyConclusion() {const list=opportunities();if(!list.length)return `当前筛选期暂无明显量增效降信号；建议继续观察${metric().label}趋势。`;const first=list[0];return `${first.shop}：${first.title}。${first.detail}，建议${first.action}。`;}
   function renderAnalysis() {
-    body.innerHTML=`<section class="pre-conclusion"><strong>关键结论</strong><span>${safe(keyConclusion())}</span><em>点击指标卡、排名或异常项继续下钻</em></section>
+    const drillBack = state.platform || state.shop ? `<section class="pre-drill-bar"><div><span>当前下钻</span><strong>${safe(state.platform || "全部平台")}${state.shop?` › ${safe(state.shop)}`:""}</strong></div><button class="back" data-pre-back>← 返回上一级</button></section>` : "";
+    body.innerHTML=`${drillBack}<section class="pre-conclusion"><strong>关键结论</strong><span>${safe(keyConclusion())}</span><em>点击指标卡、排名或异常项继续下钻</em></section>
       <div class="grid"><article class="card"><div class="section-head"><div><span class="section-index">01 · 趋势</span><h2>${safe(metric().label)}趋势</h2><p class="subtitle">节点显示当期值，悬停查看环比与同比</p></div></div>${trendChart()}</article><article class="card"><div class="section-head"><div><span class="section-index">02 · 结构</span><h2>${state.platform?"店铺":"平台"}${safe(metric().label)}结构</h2><p class="subtitle">响应顶部筛选，点击可继续定位</p></div></div>${structureChart()}</article></div>
       <article class="card pre-section"><div class="section-head"><div><span class="section-index">03 · 转化链路</span><h2>咨询转化与销售产出</h2><p class="subtitle">将规模、转化和销售贡献放在同一条链路判断</p></div></div>${funnel()}</article>
       <div class="grid equal pre-section"><article class="card"><div class="section-head"><div><span class="section-index">04 · 综合能力</span><h2>平台运营效率雷达</h2><p class="subtitle">归一化评分仅作结构对比</p></div><div class="radar-switch"><button data-radar-mode="platform" class="${state.radarMode==="platform"?"active":""}">平台</button><button data-radar-mode="shop" class="${state.radarMode==="shop"?"active":""}">店铺</button></div></div>${radar()}</article><article class="card"><div class="section-head"><div><span class="section-index">05 · 排名</span><h2>店铺${safe(metric().label)}排名</h2><p class="subtitle">默认按当前指标优先级排序，点击店铺下钻</p></div></div>${rankingTable()}</article></div>
@@ -231,10 +255,10 @@
   function table(headers,rowHtml,minWidth="820px"){return `<div class="table-wrap"><table style="min-width:${minWidth}"><thead><tr>${headers.map(header=>`<th>${header}</th>`).join("")}</tr></thead><tbody>${rowHtml.join("")}</tbody></table></div>`;}
   function renderAudit(){const duplicates=D.audit.duplicates,refunds=D.audit.refundAnomalies.slice().sort((a,b)=>b.value-a.value);body.innerHTML=`<section class="audit-summary"><strong>数据健康提醒</strong><span>当前有 ${D.meta.duplicateGroups} 组重复记录、${D.meta.blankRows} 行核心指标为空、${D.meta.refundAnomalies} 条退款率超过100%。异常数据不参与正式经营判断。</span></section><div class="grid equal"><article class="card"><h2>重复与空行备查</h2><p class="subtitle">重复日数据不自动猜测保留项，已从正式汇总剔除</p>${table(["重复键","来源行"],duplicates.map(item=>`<tr><td>${safe(item.key)}</td><td>${item.rows.join("、")}</td></tr>`))}<div class="muted-box">另有 ${D.audit.blankRows.length} 行核心指标为空，未计入经营汇总。</div></article><article class="card"><h2>退款率异常备查</h2><p class="subtitle">原表数值大于100%，当前不用于汇总、雷达或绩效排名</p>${table(["日期 / 店铺","退款率","来源行"],refunds.map(item=>`<tr><td>${item.date}<br><small>${safe(item.platform)} / ${safe(item.shop)}</small></td><td class="bad">${item.value.toFixed(2)}%</td><td>${item.sourceRow}</td></tr>`))}</article></div><article class="card pre-section"><h2>口径与完整性说明</h2><div class="quality-grid"><div><strong>周期完整性</strong><p>各店共同完整截止日 ${D.meta.commonComplete}；${currentPartial()} 为部分周期。</p></div><div><strong>平台转化口径</strong><p>京东使用出库转化，其他平台主要使用询单口径，跨平台仅作经营观察。</p></div><div><strong>响应字段</strong><p>拼多多首次响应缺失，不参与首次响应排名与综合评分。</p></div><div><strong>销售占比</strong><p>有效填报覆盖率不足90%时显示“—”，避免部分月份放大。</p></div></div></article>`;}
   function bindTips(){const tooltip=$("#tooltip");document.querySelectorAll("[data-pre-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.preTip);tooltip.innerHTML=`<b>${safe(data.period)}${data.partial?" · 部分周期":""}</b><br>${safe(data.label)}：${safe(data.value)}<br>环比：${pct(data.mom)}${state.grain==="month"?`<br>同比：${pct(data.yoy)}`:""}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});document.querySelectorAll("[data-radar-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.radarTip);tooltip.innerHTML=`<b>${safe(data.name)}</b><br>${data.axes.map(axis=>`${safe(axis.label)}：${safe(axis.value)}｜得分 ${axis.score}`).join("<br>")}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});}
-  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 页面版本 v18`;else if(workspace==="weekly")$("#dataStatus").textContent="上周复盘 · 自动选择售前、售后与销售共同完整周 · 页面版本 v18";else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v18`;}
+  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 页面版本 v20`;else if(workspace==="weekly")$("#dataStatus").textContent="上周复盘 · 各模块按自身最新成熟周复盘 · 页面版本 v20";else if(workspace==="returns"&&window.RETURN_REFUND_DATA)$("#dataStatus").textContent=`退货退款 ${window.RETURN_REFUND_DATA.meta.sourceMin} 至 ${window.RETURN_REFUND_DATA.meta.sourceMax} · 成熟月截止 ${window.RETURN_REFUND_DATA.meta.latestMatureMonth||"—"} · 页面版本 v20`;else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v20`;}
   function refresh(){refreshControls();renderKpis();if(state.page==="audit")renderAudit();else renderAnalysis();updateStatus();}
   if(!window.CS_THEME_BOUND){window.CS_THEME_BOUND=true;$("#themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";});}
-  document.addEventListener("click",async event=>{const workspaceButton=event.target.closest("[data-workspace]");if(workspaceButton){workspace=workspaceButton.dataset.workspace;pre.hidden=workspace!=="pre";weekly.hidden=workspace!=="weekly";after.hidden=workspace!=="after";document.querySelectorAll("[data-workspace]").forEach(button=>button.classList.toggle("active",button.dataset.workspace===workspace));if(workspace==="after"||workspace==="weekly"){try{await ensureAfterSales();}catch{return;}}if(workspace==="weekly")window.WEEKLY_REVIEW_APP?.render();if(workspace==="pre")refresh();updateStatus();return;}const pageButton=event.target.closest("[data-pre-page]");if(pageButton){state.page=pageButton.dataset.prePage;refresh();return;}const metricButton=event.target.closest("[data-pre-metric]");if(metricButton){state.metric=metricButton.dataset.preMetric;refresh();return;}const grainButton=event.target.closest("[data-pre-grain]");if(grainButton){state.grain=grainButton.dataset.preGrain;setDefaultRange();refresh();return;}const radarButton=event.target.closest("[data-radar-mode]");if(radarButton){state.radarMode=radarButton.dataset.radarMode;refresh();return;}const drill=event.target.closest("[data-pre-shop], [data-pre-platform]");if(drill){if(drill.dataset.prePlatform)state.platform=drill.dataset.prePlatform;if(drill.dataset.preShop)state.shop=drill.dataset.preShop;refresh();}});
+  document.addEventListener("click",async event=>{const workspaceButton=event.target.closest("[data-workspace]");if(workspaceButton){workspace=workspaceButton.dataset.workspace;pre.hidden=workspace!=="pre";weekly.hidden=workspace!=="weekly";after.hidden=workspace!=="after";returns.hidden=workspace!=="returns";document.querySelectorAll("[data-workspace]").forEach(button=>button.classList.toggle("active",button.dataset.workspace===workspace));if(workspace==="after"||workspace==="weekly"){try{await ensureAfterSales();}catch{return;}}if(workspace==="returns"){try{await ensureReturnRefund();}catch{return;}window.RETURN_REFUND_APP?.render();}if(workspace==="weekly")window.WEEKLY_REVIEW_APP?.render();if(workspace==="pre")refresh();updateStatus();return;}const pageButton=event.target.closest("[data-pre-page]");if(pageButton){state.page=pageButton.dataset.prePage;refresh();return;}const metricButton=event.target.closest("[data-pre-metric]");if(metricButton){state.metric=metricButton.dataset.preMetric;refresh();return;}const grainButton=event.target.closest("[data-pre-grain]");if(grainButton){state.grain=grainButton.dataset.preGrain;setDefaultRange();refresh();return;}const radarButton=event.target.closest("[data-radar-mode]");if(radarButton){state.radarMode=radarButton.dataset.radarMode;refresh();return;}const back=event.target.closest("[data-pre-back]");if(back){if(state.shop)state.shop="";else state.platform="";refresh();return;}const drill=event.target.closest("[data-pre-shop], [data-pre-platform]");if(drill){if(drill.dataset.prePlatform)state.platform=drill.dataset.prePlatform;if(drill.dataset.preShop)state.shop=drill.dataset.preShop;refresh();}});
   document.addEventListener("change",event=>{if(event.target===platformSelect){state.platform=event.target.value;state.shop="";refresh();}if(event.target===shopSelect){state.shop=event.target.value;refresh();}if(event.target===startSelect){state.start=event.target.value;if(state.start>state.end)state.end=state.start;refresh();}if(event.target===endSelect){state.end=event.target.value;if(state.end<state.start)state.start=state.end;refresh();}});
   setDefaultRange();refresh();ensureAfterSales().then(()=>{window.WEEKLY_REVIEW_APP?.render();updateStatus();}).catch(()=>{});
 })();

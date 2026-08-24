@@ -14,13 +14,16 @@
             <h2 id="dashboardModalTitle"></h2>
             <p id="dashboardModalSubtitle"></p>
           </div>
-          <button type="button" class="dashboard-modal-close" aria-label="关闭弹窗">×</button>
+          <div class="dashboard-modal-actions">
+            <button type="button" class="dashboard-modal-back">← 返回上一级</button>
+            <button type="button" class="dashboard-modal-close" aria-label="关闭弹窗">×</button>
+          </div>
         </header>
         <div id="dashboardModalBody" class="dashboard-modal-body"></div>
       </section>`;
     document.body.appendChild(overlay);
     overlay.addEventListener("click", event => {
-      if (event.target === overlay || event.target.closest(".dashboard-modal-close")) close();
+      if (event.target === overlay || event.target.closest(".dashboard-modal-close, .dashboard-modal-back")) close();
     });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && !overlay.hidden) close();

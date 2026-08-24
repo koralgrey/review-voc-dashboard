@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>客服售前售后经营工作台</title>
-  <link rel="stylesheet" href="../after-sales.css?v=20260824-18">
+  <link rel="stylesheet" href="../after-sales.css?v=20260824-20">
 </head>
 <body>
   <header class="hero">
-    <div class="brand"><span class="logo">A</span><div><h1>客服售前售后经营工作台</h1><p>售前转化、服务效率、产品问题与赔偿损失</p><small id="dataStatus">数据加载中…</small></div></div>
+    <div class="brand"><span class="logo">A</span><div><h1>客服售前售后经营工作台</h1><p>售前转化、服务效率、产品问题、赔偿与退货退款</p><small id="dataStatus">数据加载中…</small></div></div>
     <button id="themeBtn" class="ghost">深色模式</button>
   </header>
 
@@ -17,6 +17,7 @@
       <button data-workspace="weekly" class="active">上周复盘</button>
       <button data-workspace="pre">售前经营</button>
       <button data-workspace="after">售后分析</button>
+      <button data-workspace="returns">退货退款分析</button>
     </div>
 
     <section id="preSalesWorkspace" hidden>
@@ -66,12 +67,30 @@
     <section id="kpis" class="kpis"></section>
     <section id="dashboardBody"></section>
     </section>
+
+    <section id="returnRefundWorkspace" hidden>
+      <section class="filters return-filters panel">
+        <label>开始周期<select id="returnStart"></select></label>
+        <span class="arrow">→</span>
+        <label>结束周期<select id="returnEnd"></select></label>
+        <label>运营一级大类<div id="returnCat1Combo" class="combo"></div></label>
+        <span class="arrow">›</span>
+        <label>运营二级品类<div id="returnCat2Combo" class="combo"></div></label>
+        <div class="period-switch" aria-label="退货退款趋势粒度">
+          <button data-return-grain="month" class="active">月度趋势</button><button data-return-grain="week">最近4周</button>
+        </div>
+        <div id="returnScope" class="pre-scope"></div>
+      </section>
+      <section id="returnKpis" class="return-kpis"></section>
+      <section id="returnDashboardBody"></section>
+    </section>
   </main>
 
   <div id="tooltip" class="tooltip" role="tooltip"></div>
   <script src="../data/pre-sales-data.js?v=20260821-12"></script>
-  <script src="../dashboard-modal.js?v=20260824-18"></script>
-  <script src="../weekly-review.js?v=20260824-18"></script>
-  <script src="../pre-sales.js?v=20260824-18"></script>
+  <script src="../data/return-refund-summary-data.js?v=20260824-20"></script>
+  <script src="../dashboard-modal.js?v=20260824-20"></script>
+  <script src="../weekly-review.js?v=20260824-20"></script>
+  <script src="../pre-sales.js?v=20260824-20"></script>
 </body>
 </html>
