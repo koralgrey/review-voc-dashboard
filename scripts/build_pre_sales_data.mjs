@@ -60,7 +60,7 @@ function aggregate(grain) {
   for (const row of clean) {
     const period = grain === "month" ? row.date.slice(0, 7) : isoWeek(row.date);
     const key = `${period}|§${row.platform}|§${row.shop}`;
-    const out = map.get(key) || {period, platform:row.platform, shop:row.shop, consult:0, sales:0, converted:0, inquiryBase:0, storeSalesBase:0, shareSales:0, shareDays:0, firstWeighted:0, firstWeight:0, avgWeighted:0, avgWeight:0, days:0};
+    const out = map.get(key) || {period, platform:row.platform, shop:row.shop, consult:0, sales:0, converted:0, inquiryBase:0, storeSalesBase:0, shareSales:0, shareDays:0, firstWeighted:0, firstWeight:0, avgWeighted:0, avgWeight:0, refundWeighted:0, refundWeight:0, days:0};
     out.consult += row.consult || 0;
     out.sales += row.sales || 0;
     out.converted += row.converted || 0;
@@ -68,13 +68,15 @@ function aggregate(grain) {
     if (row.salesShare > 0 && row.salesShare <= 100 && row.sales != null) { out.storeSalesBase += row.sales / (row.salesShare / 100); out.shareSales += row.sales; out.shareDays += 1; }
     if (row.firstResponse != null && row.firstResponse >= 0) { out.firstWeighted += row.firstResponse * row.consult; out.firstWeight += row.consult; }
     if (row.avgResponse != null && row.avgResponse >= 0) { out.avgWeighted += row.avgResponse * row.consult; out.avgWeight += row.consult; }
+    // 退款率只接收 0–100% 的有效日记录；无订单量分母时按有效填报日简单平均。
+    if (row.refundRate != null && row.refundRate >= 0 && row.refundRate <= 100) { out.refundWeighted += row.refundRate; out.refundWeight += 1; }
     out.days += 1;
     map.set(key, out);
   }
   return [...map.values()].sort((a,b) => a.period.localeCompare(b.period) || a.platform.localeCompare(b.platform) || a.shop.localeCompare(b.shop)).map(row => ({
     p:row.period, pf:row.platform, s:row.shop, c:round(row.consult,0), a:round(row.sales,2), t:round(row.converted,0),
     ib:round(row.inquiryBase,2), sb:round(row.storeSalesBase,2), sa:round(row.shareSales,2), sd:row.shareDays, fw:round(row.firstWeighted,2), fn:round(row.firstWeight,0),
-    aw:round(row.avgWeighted,2), an:round(row.avgWeight,0), d:row.days
+    aw:round(row.avgWeighted,2), an:round(row.avgWeight,0), rw:round(row.refundWeighted,4), rn:row.refundWeight, d:row.days
   }));
 }
 
