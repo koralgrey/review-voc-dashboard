@@ -3,7 +3,7 @@
 
 const categories=window.REVIEW_INSIGHTS||[];
 const manifest=window.REVIEW_MANIFEST;
-const cache={},loads=new Map(),rawLoads=new Map();
+const cache={},loads=new Map();
 const fallbackTopics=['性能效果','质量材质','外观设计','安装适配','品牌信任','气味环保','服务售后','物流包装','价格价值'];
 const topics=manifest?.focusTopics||fallbackTopics;
 const colors=['#1877f2','#18a77b','#8b5cf6','#f59e0b','#ef5b5b','#25a4c4','#d946ef','#64748b','#84cc16'];
@@ -46,21 +46,10 @@ function loadCategory(name){
   if(cache[name])return Promise.resolve(cache[name]);
   if(loads.has(name))return loads.get(name);
   const promise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src=`data/${manifest.categories[name]}?v=20260820-7`;
+    const script=document.createElement('script');script.src=`data/${manifest.categories[name]}?v=20260825-2`;
     script.onload=()=>{const payload=window.REVIEW_CATEGORY_DATA?.[name];script.remove();if(!payload)return reject(new Error(`${name}数据无效`));cache[name]=payload;delete window.REVIEW_CATEGORY_DATA[name];resolve(payload)};
     script.onerror=()=>{script.remove();reject(new Error(`${name}数据加载失败`))};document.head.appendChild(script);
   }).finally(()=>loads.delete(name));loads.set(name,promise);return promise;
-}
-
-function loadRaw(name){
-  if(window.REVIEW_RAW_DATA?.[name])return Promise.resolve(window.REVIEW_RAW_DATA[name]);
-  if(rawLoads.has(name))return rawLoads.get(name);
-  const path=manifest.rawCategories?.[name];if(!path)return Promise.reject(new Error('原评论备查数据未生成'));
-  const promise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src=`data/${path}?v=20260820-7`;
-    script.onload=()=>{script.remove();const rows=window.REVIEW_RAW_DATA?.[name];rows?resolve(rows):reject(new Error('原评论数据无效'))};
-    script.onerror=()=>{script.remove();reject(new Error('原评论数据加载失败'))};document.head.appendChild(script);
-  }).finally(()=>rawLoads.delete(name));rawLoads.set(name,promise);return promise;
 }
 
 function saveRange(){localStorage.setItem('vocDateRange',JSON.stringify({start:state.start,end:state.end}))}
@@ -88,13 +77,13 @@ function sidebar(stats){
   ensureSelection(stats);
   const categoryButtons=categories.map((category,index)=>`<button class="cat-button" data-category="${index}" aria-current="${index===state.category}"><span>${esc(category.name)}</span><small>›</small></button>`).join('');
   const topicChecks=stats.items.map(item=>`<label><input type="checkbox" value="${esc(item.name)}" ${state.selected.has(item.name)?'checked':''} ${item.count?'':'disabled'}><i style="--store-color:${colors[item.index%colors.length]}"></i><span>${esc(item.name)}</span><small>${item.rate.toFixed(1)}%</small></label>`).join('');
-  document.getElementById('attentionSidebar').innerHTML=`<nav class="page-switch" aria-label="看板页面"><a href="dashboard-v3.html">VOC洞察</a><a href="rating-dashboard.html">店铺好评</a><a class="active" href="attention-dashboard.html">关注点</a></nav><div class="sidebar-label important">1. 选择品类（必选）</div><div class="category-list attention-category-list">${categoryButtons}</div><div class="sidebar-label important">2. 时间范围</div><div class="side-filter"><div class="date-range"><span><small>开始日期</small><input type="date" id="startDate" min="${manifest.minDate}" max="${manifest.maxDate}" value="${state.start}"></span><i>至</i><span><small>结束日期</small><input type="date" id="endDate" min="${manifest.minDate}" max="${manifest.maxDate}" value="${state.end}"></span></div><div class="date-presets"><button data-days="all" class="${fullRange()?'active':''}">全部</button><button data-days="28">近4周</button><button data-days="84">近12周</button><button data-days="ytd">今年</button></div></div><div class="sidebar-label important">3. 对比关注点</div><div class="store-tools"><button id="topTopics">前5关注点</button><button id="allTopics">全选</button></div><div class="category-checks focus-checks">${topicChecks}</div><div class="sidebar-download"><button id="downloadAll">↓ 下载筛选原评论</button><small>保留Excel原行号、店铺、日期和原文</small></div>`;
+  document.getElementById('attentionSidebar').innerHTML=`<nav class="page-switch" aria-label="看板页面"><a href="dashboard-v3.html">VOC洞察</a><a href="rating-dashboard.html">店铺好评</a><a class="active" href="attention-dashboard.html">关注点</a></nav><div class="sidebar-label important">1. 选择品类（必选）</div><div class="category-list attention-category-list">${categoryButtons}</div><div class="sidebar-label important">2. 时间范围</div><div class="side-filter"><div class="date-range"><span><small>开始日期</small><input type="date" id="startDate" min="${manifest.minDate}" max="${manifest.maxDate}" value="${state.start}"></span><i>至</i><span><small>结束日期</small><input type="date" id="endDate" min="${manifest.minDate}" max="${manifest.maxDate}" value="${state.end}"></span></div><div class="date-presets"><button data-days="all" class="${fullRange()?'active':''}">全部</button><button data-days="28">近4周</button><button data-days="84">近12周</button><button data-days="ytd">今年</button></div></div><div class="sidebar-label important">3. 对比关注点</div><div class="store-tools"><button id="topTopics">前5关注点</button><button id="allTopics">全选</button></div><div class="category-checks focus-checks">${topicChecks}</div><div class="sidebar-download"><small>原评论仅保存在本地备查文件，公开看板不提供原文或下载。</small></div>`;
   document.querySelectorAll('[data-category]').forEach(button=>button.onclick=()=>selectCategory(Number(button.dataset.category)));
   document.getElementById('startDate').onchange=event=>setDates(event.target.value,state.end);document.getElementById('endDate').onchange=event=>setDates(state.start,event.target.value);
   document.querySelectorAll('.date-presets button').forEach(button=>button.onclick=()=>{const value=button.dataset.days,end=date(manifest.maxDate);if(value==='all')return setDates(manifest.minDate,manifest.maxDate);if(value==='ytd')return setDates(`${end.getUTCFullYear()}-01-01`,manifest.maxDate);setDates(addDays(manifest.maxDate,-Number(value)+1),manifest.maxDate)});
   document.querySelectorAll('.focus-checks input').forEach(input=>input.onchange=()=>{input.checked?state.selected.add(input.value):state.selected.delete(input.value);state.auto=false;render()});
   document.getElementById('topTopics').onclick=()=>{state.selected=new Set(stats.items.filter(item=>item.count).slice(0,5).map(item=>item.name));state.auto=false;render()};
-  document.getElementById('allTopics').onclick=()=>{state.selected=new Set(stats.items.filter(item=>item.count).map(item=>item.name));state.auto=false;render()};document.getElementById('downloadAll').onclick=event=>downloadRaw(null,event.currentTarget);
+  document.getElementById('allTopics').onclick=()=>{state.selected=new Set(stats.items.filter(item=>item.count).map(item=>item.name));state.auto=false;render()};
 }
 
 function lastCompleteSunday(){const result=date(state.end),day=result.getUTCDay();if(day)result.setUTCDate(result.getUTCDate()-day);return iso(result)}
@@ -152,30 +141,24 @@ function heatmap(series,stats){
 function ranking(stats,cmp){
   const changes=new Map(cmp.items.map(item=>[item.name,item]));
   const rows=stats.items.map(item=>{const change=changes.get(item.name),details=item.details.length?item.details.map(detail=>detail[0]).join('、'):(item.keywords.map(keyword=>keyword[0]).join('、')||'表达较分散');return `<tr data-focus="${esc(item.name)}" class="${state.activeFocus===item.name?'active':''}"><td><i style="--store-color:${colors[item.index%colors.length]}"></i><b>${esc(item.name)}</b></td><td>${fmt(item.count)}</td><td class="good-cell">${item.rate.toFixed(1)}%</td><td>${cmp.available?`${change.curRate.toFixed(1)}%`:'—'}</td><td>${cmp.available?`${change.prevRate.toFixed(1)}%`:'—'}</td><td class="${change?.change==null?'':change.change>=0?'positive-change':'negative-change'}">${cmp.available?pp(change.change):'—'}</td><td class="detail-cell">${esc(details)}</td></tr>`}).join('');
-  return `<section class="card attention-table-card"><div class="section-head"><div><h2>关注点排名与近4周变化</h2><p>点击关注点查看细分主题和原评论</p></div><span>${cmp.available?`${cmp.curStart} 至 ${cmp.curEnd}`:'所选范围不足8周'}</span></div><div class="table-scroll"><table class="rating-table attention-table focus-table"><thead><tr><th>关注大类</th><th>提及量</th><th>提及率</th><th>近4周</th><th>前4周</th><th>变化</th><th>品类细分焦点</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+  return `<section class="card attention-table-card"><div class="section-head"><div><h2>关注点排名与近4周变化</h2><p>点击关注点查看细分主题和店铺分布</p></div><span>${cmp.available?`${cmp.curStart} 至 ${cmp.curEnd}`:'所选范围不足8周'}</span></div><div class="table-scroll"><table class="rating-table attention-table focus-table"><thead><tr><th>关注大类</th><th>提及量</th><th>提及率</th><th>近4周</th><th>前4周</th><th>变化</th><th>品类细分焦点</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 
 function evidence(stats,rows){
-  const item=stats.items.find(entry=>entry.name===state.activeFocus)||stats.items[0];if(!item)return '';const matched=rows.filter(row=>hasFocus(row,item.name)),positiveRate=rate(item.positive,item.count),riskRate=rate(item.risk,item.count),ordered=matched.slice().sort((a,b)=>(Number(b.helpful||0)-Number(a.helpful||0))||(Number(b.risk)-Number(a.risk))||b.text.length-a.text.length).slice(0,6);
-  const detailTags=item.details.length?item.details.map(detail=>`<span>${esc(detail[0])}<small>${fmt(detail[1])}条</small></span>`).join(''):'<em>当前品类的细分表达较分散</em>',reviews=ordered.map((row,index)=>`<article><span>${index+1}</span><div><p>“${esc(row.text)}”</p><small>${esc(row.shop)} · ${row.date}${row.focusDetails?.length?` · ${esc(row.focusDetails.join('、'))}`:''}</small></div></article>`).join('')||'<p class="empty-evidence">当前范围没有匹配原评论</p>';
-  return `<section class="card focus-evidence"><div class="section-head"><div><h2>${esc(item.name)}为什么被关注</h2><p>${esc(descriptions[item.name]||'')}</p></div><button id="downloadFocus">↓ 下载该关注点原评论</button></div><div class="focus-summary"><div><span>提及率</span><b>${item.rate.toFixed(1)}%</b><small>${fmt(item.count)}条去重评论</small></div><div><span>正向表达</span><b class="positive-change">${positiveRate.toFixed(1)}%</b><small>仅作文本倾向辅助判断</small></div><div><span>风险表达</span><b class="negative-change">${riskRate.toFixed(1)}%</b><small>命中明确负向词</small></div><div class="focus-detail-tags"><span>品类细分焦点</span><div>${detailTags}</div></div></div><div class="focus-review-list">${reviews}</div></section>`;
+  const item=stats.items.find(entry=>entry.name===state.activeFocus)||stats.items[0];if(!item)return '';const matched=rows.filter(row=>hasFocus(row,item.name)),positiveRate=rate(item.positive,item.count),riskRate=rate(item.risk,item.count),shopCounts=[...matched.reduce((map,row)=>map.set(row.shop,(map.get(row.shop)||0)+1),new Map())].sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const detailTags=item.details.length?item.details.map(detail=>`<span>${esc(detail[0])}<small>${fmt(detail[1])}条</small></span>`).join(''):'<em>当前品类的细分表达较分散</em>',shopList=shopCounts.map(([shop,count],index)=>`<article><span>${index+1}</span><div><p>${esc(shop)}</p><small>${fmt(count)}条命中 · 占该关注点${rate(count,matched.length).toFixed(1)}%</small></div></article>`).join('')||'<p class="empty-evidence">当前范围没有匹配数据</p>';
+  return `<section class="card focus-evidence"><div class="section-head"><div><h2>${esc(item.name)}为什么被关注</h2><p>${esc(descriptions[item.name]||'')}</p></div><span>原评论仅本地备查</span></div><div class="focus-summary"><div><span>提及率</span><b>${item.rate.toFixed(1)}%</b><small>${fmt(item.count)}条去重评论</small></div><div><span>正向表达</span><b class="positive-change">${positiveRate.toFixed(1)}%</b><small>仅作文本倾向辅助判断</small></div><div><span>风险表达</span><b class="negative-change">${riskRate.toFixed(1)}%</b><small>命中明确负向词</small></div><div class="focus-detail-tags"><span>品类细分焦点</span><div>${detailTags}</div></div></div><div class="focus-review-list">${shopList}</div></section>`;
 }
 
 function taxonomy(){return `<section class="card attention-method taxonomy-card"><b>分类口径</b><div>${topics.map((name,index)=>`<span><i style="--store-color:${colors[index%colors.length]}"></i><strong>${esc(name)}</strong><small>${esc(descriptions[name]||'')}</small></span>`).join('')}</div><p>每月新数据继续使用同一级大类识别，确保趋势可比；品类细分焦点保留各品类的产品语境。“品牌信任”只统计评论中明确出现的品牌、正品、旗舰店等表达。</p></section>`}
 
 function bindDetailEvents(){
-  document.querySelectorAll('[data-attention-metric]').forEach(button=>button.onclick=()=>{state.metric=button.dataset.attentionMetric;render()});document.querySelectorAll('[data-focus]').forEach(element=>element.onclick=()=>{state.activeFocus=element.dataset.focus;render()});document.querySelectorAll('.focus-table tbody tr').forEach(row=>row.onclick=()=>{state.activeFocus=row.dataset.focus;render()});const download=document.getElementById('downloadFocus');if(download)download.onclick=event=>downloadRaw(state.activeFocus,event.currentTarget);
+  document.querySelectorAll('[data-attention-metric]').forEach(button=>button.onclick=()=>{state.metric=button.dataset.attentionMetric;render()});document.querySelectorAll('[data-focus]').forEach(element=>element.onclick=()=>{state.activeFocus=element.dataset.focus;render()});document.querySelectorAll('.focus-table tbody tr').forEach(row=>row.onclick=()=>{state.activeFocus=row.dataset.focus;render()});
 }
 
 function render(){
   const rows=rangeRows(),stats=topicStats(rows);ensureSelection(stats);sidebar(stats);const series=buildSeries(),cmp=comparison();
   document.getElementById('attentionDetail').innerHTML=`<section class="card attention-hero"><div><span>${esc(currentName())} · 消费者关注内容</span><h1>消费者关注点趋势</h1><p>${state.start} 至 ${state.end} · ${series.grain==='week'?'按周':'按月'}展示</p></div><div><b>当前口径</b><strong>多标签提及率</strong><small>分析消费者关注什么，不表示满意度</small></div></section>${kpis(stats,cmp)}${chartCard(series,stats)}<div class="attention-lower">${heatmap(series,stats)}${evidence(stats,rows)}</div>${ranking(stats,cmp)}${taxonomy()}`;bindDetailEvents();requestAnimationFrame(()=>drawChart(series,stats));
-}
-
-function csvCell(value){const text=String(value??'');return /[",\n\r]/.test(text)?`"${text.replace(/"/g,'""')}"`:text}
-async function downloadRaw(focus,button){
-  const original=button.textContent;button.disabled=true;button.textContent='正在准备原评论…';
-  try{const rows=(await loadRaw(currentName())).filter(inRange).filter(row=>!focus||row.focuses?.includes(focus)),header=['Excel原行号','品类','日期','店铺','评价类型','有用数','关注大类','品类细分焦点','关键词','原评论'],lines=[header,...rows.map(row=>[row.sourceRow,currentName(),row.date,row.shop,row.rating,row.helpful,(row.focuses||[]).join('|'),(row.focusDetails||[]).join('|'),(row.keywords||[]).join('|'),row.text])].map(line=>line.map(csvCell).join(',')),blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${currentName()}_${state.start}_${state.end}${focus?`_${focus}`:''}_原评论.csv`;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url)}catch(error){alert(error.message)}finally{button.disabled=false;button.textContent=original}
 }
 
 function loading(){document.getElementById('attentionDetail').innerHTML=`<section class="card load-state" role="status"><div class="loader"></div><h2>正在加载${esc(currentName())}关注点数据</h2><p>正在汇总评论大类和品类细分焦点。</p></section>`}
