@@ -23,7 +23,7 @@
     if (afterSalesPromise) return afterSalesPromise;
     $("#dataStatus").textContent = "正在加载售后分析数据…";
     $("#dashboardBody").innerHTML = `<article class="card loading-card"><div class="loading-dot"></div><h2>正在加载售后数据…</h2><p class="subtitle">首次进入售后页加载，后续切换直接使用缓存。</p></article>`;
-    afterSalesPromise = loadScript("../data/after-sales-data.js?v=20260821-10").then(() => loadScript("../after-sales.js?v=20260824-18")).catch(error => {
+    afterSalesPromise = loadScript("../data/after-sales-data.js?v=20260831-22").then(() => loadScript("../after-sales.js?v=20260824-18")).catch(error => {
       afterSalesPromise = null;
       $("#dashboardBody").innerHTML = `<article class="card"><div class="empty">${safe(error.message)}，请刷新后重试。</div></article>`;
       throw error;
