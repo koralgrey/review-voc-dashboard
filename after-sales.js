@@ -22,7 +22,7 @@
     rateSort:{key:"count",dir:-1}, compSort:{key:"paidAmount",dir:-1}, actionSort:{key:"priority",dir:-1}
   };
 
-  const DATA_VERSION = "20260821-10";
+  const DATA_VERSION = "20260907-1";
   const dataRows = (type, grain=state.grain) => {
     const key=`${type}${grain === "month" ? "Month" : "Week"}`;
     if(type==="productSales") return window.AFTER_SALES_PRODUCT_SALES?.[key] || [];
@@ -58,40 +58,58 @@
     salesIndexCache.set(cacheKey,index);return index;
   }
   const periodCache={};
+  function isoWeekKey(d){
+    const x=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())),day=x.getUTCDay()||7;
+    x.setUTCDate(x.getUTCDate()+4-day);
+    const yearStart=new Date(Date.UTC(x.getUTCFullYear(),0,1)),week=Math.ceil((((x-yearStart)/86400000)+1)/7);
+    return `${x.getUTCFullYear()}-W${String(week).padStart(2,"0")}`;
+  }
+  function maxIssueCompletePeriod(grain){
+    const raw=D.meta.afterSalesMax;if(!raw)return "";
+    const d=new Date(`${raw}T00:00:00Z`);if(Number.isNaN(d.getTime()))return "";
+    if(grain==="week"){
+      const weekday=d.getUTCDay()||7;if(weekday<7)d.setUTCDate(d.getUTCDate()-weekday);
+      return isoWeekKey(d);
+    }
+    const end=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0));
+    if(d.getUTCDate()===end.getUTCDate())return raw.slice(0,7);
+    d.setUTCDate(0);return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;
+  }
   function periodInfo(grain=state.grain){
     if(periodCache[grain]) return periodCache[grain];
     const issues=[...new Set(dataRows("issues",grain).map(r=>r.period))].filter(Boolean).sort();
     const sales=[...new Set(dataRows("sales",grain).filter(r=>Number(r.amount)>0).map(r=>r.period))].filter(Boolean).sort();
     const issueSet=new Set(issues), salesSet=new Set(sales), all=[...new Set([...issues,...sales])].sort(), common=sales.filter(p=>issueSet.has(p));
-    const currentPartial=grain==="month"?(D.meta.afterSalesMax||"").slice(0,7):issues.at(-1);
-    const maxComplete=(grain==="week"?common.filter(p=>p<currentPartial):common.filter(p=>p<currentPartial)).at(-1)||"";
+    const currentPartial=grain==="month"?(D.meta.afterSalesMax||"").slice(0,7):issues.at(-1),maxIssueComplete=maxIssueCompletePeriod(grain);
+    const maxComplete=common.filter(p=>p<=maxIssueComplete).at(-1)||"";
     const firstPartial=issues[0]||"";
-    return periodCache[grain]={issues,sales,all,issueSet,salesSet,maxComplete,currentPartial,firstPartial};
+    return periodCache[grain]={issues,sales,all,issueSet,salesSet,maxComplete,maxIssueComplete,currentPartial,firstPartial};
   }
   const allPeriods = (grain=state.grain) => periodInfo(grain).all;
   const issuePeriods = (grain=state.grain) => periodInfo(grain).issues;
   const salesPeriods = (grain=state.grain) => periodInfo(grain).sales;
   const maxComplete = (grain=state.grain) => periodInfo(grain).maxComplete;
   function isCompleteIssuePeriod(period,grain=state.grain){const x=periodInfo(grain);return x.issueSet.has(period)&&x.salesSet.has(period)&&period!==x.firstPartial&&period<=x.maxComplete;}
+  function isCompleteAfterSalesPeriod(period,grain=state.grain){const x=periodInfo(grain);return x.issueSet.has(period)&&period!==x.firstPartial&&period<=x.maxIssueComplete;}
   function rangeOptions(){
     if(state.grain === "week") return [
-      ["recent4","最近4个完整销售周"],["recent8","最近8个完整销售周"],["latest","最新完整销售周"],["current","当前售后周（每万元售后起数暂不计算）"]
+      ["recent4","最近4个完整售后周"],["recent8","最近8个完整售后周"],["latest","最新完整售后周"],["current","当前售后周（每万元售后起数暂不计算）"]
     ];
     const years=[...new Set(issuePeriods("month").map(p=>p.slice(0,4)))].sort().reverse(), current=(D.meta.afterSalesMax||"2026").slice(0,4);
     const yearOptions=years.map(y=>{const ps=issuePeriods("month").filter(p=>p.startsWith(y)),months=`${ps[0]?.slice(5)}–${ps.at(-1)?.slice(5)}月`;return [y===current?"ytd":`year-${y}`,y===current?`${y}年累计（月度）`:`${y}年可用期（${months}）`]});
     return [...yearOptions,["last6","最近6个完整月"],["latest","最新完整月"],["mtd","本月至今（每万元售后起数暂不计算）"]];
   }
   function periodsFor(range=state.range, grain=state.grain){
-    const all=allPeriods(grain), complete=maxComplete(grain), completed=all.filter(p=>p<=complete);
+    const all=allPeriods(grain), issueCompleted=issuePeriods(grain).filter(p=>isCompleteAfterSalesPeriod(p,grain));
     if(grain === "week"){
-      if(range==="latest") return completed.slice(-1);
-      if(range==="recent8") return completed.slice(-8);
+      if(range==="latest") return issueCompleted.slice(-1);
+      if(range==="recent8") return issueCompleted.slice(-8);
       if(range==="current") return issuePeriods(grain).slice(-1);
-      return completed.slice(-4);
+      return issueCompleted.slice(-4);
     }
     const latestIssue=issuePeriods(grain).at(-1);
-    if(range==="latest") return completed.slice(-1);
-    if(range==="last6") return completed.slice(-6);
+    if(range==="latest") return issueCompleted.slice(-1);
+    if(range==="last6") return issueCompleted.slice(-6);
     if(range==="mtd") return latestIssue ? [latestIssue] : [];
     const year=range.startsWith("year-")?range.slice(5):(D.meta.afterSalesMax||"2026").slice(0,4);
     return issuePeriods(grain).filter(p=>p.startsWith(year));
@@ -101,6 +119,7 @@
     return i>0 ? all.slice(Math.max(0,i-periods.length),i) : [];
   }
   function validComparison(periods,previous,grain=state.grain){return periods.length>0&&previous.length===periods.length&&periods.every(p=>isCompleteIssuePeriod(p,grain))&&previous.every(p=>isCompleteIssuePeriod(p,grain));}
+  function validIssueComparison(periods,previous,grain=state.grain){return periods.length>0&&previous.length===periods.length&&periods.every(p=>isCompleteAfterSalesPeriod(p,grain))&&previous.every(p=>isCompleteAfterSalesPeriod(p,grain));}
   const eligible = periods => periods.filter(p=>isCompleteIssuePeriod(p,state.grain));
   const rowIds=new WeakMap();let rowId=0;const filterCache=new Map();
   function filtered(rows, periods=periodsFor(), opts={}){
@@ -169,7 +188,7 @@
   function card(label,value,note){return `<article class="kpi"><span class="label">${label}</span><strong>${value}</strong><small>${note}</small></article>`}
   function currentMetrics(){
     const periods=periodsFor(), prev=previousPeriods(periods), issues=filtered(dataRows("issues"),periods), prevIssues=filtered(dataRows("issues"),prev), comps=state.module==="comp"?filteredComp(dataRows("comp"),compPeriods()):filtered(dataRows("comp"),periods);
-    const count=sum(issues,"count"), prevCount=sum(prevIssues,"count"), r=rateFor(sum(filtered(dataRows("issues"),eligible(periods)),"count"),periods);
+    const count=sum(issues,"count"), prevCount=sum(prevIssues,"count"), alignedPeriods=eligible(periods), r=alignedPeriods.length===periods.length?rateFor(sum(filtered(dataRows("issues"),alignedPeriods),"count"),alignedPeriods):NaN;
     const issueAgg=group(issues,"issue"), high=issueAgg.filter(x=>x.count>=Math.max(5,count*.03)).length;
     if(state.module==="comp"){
       const cp=compPeriods(),amount=sum(comps,"amount"),paidAmount=sum(comps,"paidAmount"),records=sum(comps,"count"),paidRecords=sum(comps,"paidCount"),audits=D.compensationAudit.filter(a=>(!state.cat1||a.cat1===state.cat1)&&(!state.cat2||a.cat2===state.cat2));
@@ -179,10 +198,59 @@
       const products=new Set(issues.map(r=>`${r.code}|${r.product}`)).size, compProducts=new Set(comps.map(r=>`${r.code}|${r.product}`)).size;
       kpis.innerHTML=card("问题产品数",fmt.format(products),"当前时间范围")+card("高频具体问题",fmt.format(high),"自动标记优先排查")+card("涉及赔偿产品",fmt.format(compProducts),"财务异常清单范围")+card("实际已打款",money(sum(comps,"paidAmount")),"仅统计有明确打款时间的记录");
     }else{
-      const comparable=validComparison(periods,prev);
+      const comparable=validIssueComparison(periods,prev);
       kpis.innerHTML=card("有效售后起数",fmt.format(count),"一条有效售后登记计 1 起，排除重复")+card("每万元售后起数",Number.isFinite(r)?r.toFixed(2):"—",Number.isFinite(r)?"售后起数 ÷ 同期电商销售额 × 10,000":"当前周期未完整对齐")+card("较上期变化",comparable?pct(change(count,prevCount)):"—",comparable?"同长度上一周期":"基期不完整，不计算")+card("高关注问题",fmt.format(high),"高频、高售后负担或持续增长");
     }
   }
+
+  const periodSpan=periods=>periods.length?(periods.length===1?periods[0]:`${periods[0]} 至 ${periods.at(-1)}`):"暂无可用周期";
+  function analysisScope(){
+    const periods=periodsFor(),parts=[state.cat1||"全部大类",state.cat2||"全部品类",state.issue||"全部问题"];
+    if(state.product)parts.push(state.product);
+    return `<section class="after-scope-strip"><div><span>当前分析范围</span><strong>${safe(periodSpan(periods))} · ${safe(parts.join(" · "))}</strong></div><small>${state.grain==="week"?"周度观察":"月度观察"} · 售后截至 ${safe(D.meta.afterSalesMax)} · 销售截至 ${safe(D.meta.salesMax)}</small></section>`;
+  }
+  function explanationCards(){
+    const periods=periodsFor(),previous=previousPeriods(periods),aligned=periods.length>0&&eligible(periods).length===periods.length,comparable=validIssueComparison(periods,previous);
+    const cards=[
+      ["当前周期",periodSpan(periods),aligned?"售后与销售分母已对齐":"包含不完整周期"],
+      ["环比基期",comparable?periodSpan(previous):"—",comparable?"采用前一等长完整周期":"基期不完整，暂不比较"],
+      ["数据覆盖",`售后 ${D.meta.afterSalesMax}`,`销售分母 ${D.meta.salesMax}`],
+      ["口径状态",aligned?"可计算":"部分暂停",aligned?"一条有效登记计1起；销售已排除经销商":"需完整分母的指标显示“—”"]
+    ];
+    return `<section class="after-explain-grid">${cards.map(([label,value,note],i)=>`<article><span>${safe(label)}</span><strong>${safe(value)}</strong><small>${safe(note)}</small></article>`).join("")}</section>`;
+  }
+  function conclusionBar(){
+    const periods=periodsFor(),previous=previousPeriods(periods),currentRows=filtered(dataRows("issues"),periods),previousRows=filtered(dataRows("issues"),previous),count=sum(currentRows,"count"),previousCount=sum(previousRows,"count"),comparable=validIssueComparison(periods,previous);
+    let text="当前筛选没有可用于判断的售后记录。",detail="可调整时间或品类筛选";
+    if(count>0&&comparable){
+      const currentIssues=new Map(group(currentRows,"issue").map(x=>[x.issue,x.count])),previousIssues=new Map(group(previousRows,"issue").map(x=>[x.issue,x.count]));
+      const changes=[...currentIssues].map(([issue,value])=>({issue,value,previous:previousIssues.get(issue)||0,delta:value-(previousIssues.get(issue)||0)})).sort((a,b)=>b.delta-a.delta),lead=changes[0];
+      const aligned=eligible(periods),previousAligned=eligible(previous),rate=aligned.length===periods.length?rateFor(sum(filtered(dataRows("issues"),aligned),"count"),aligned):NaN,previousRate=previousAligned.length===previous.length?rateFor(sum(filtered(dataRows("issues"),previousAligned),"count"),previousAligned):NaN;
+      text=`售后 ${fmt.format(count)} 起，环比 ${pct(change(count,previousCount))}；每万元售后 ${Number.isFinite(rate)?rate.toFixed(2):"—"} 起，环比 ${Number.isFinite(rate)&&Number.isFinite(previousRate)?pct(change(rate,previousRate)):"—"}。`;
+      detail=lead&&lead.delta>0?`主要增量来自“${lead.issue}”：较上期增加 ${fmt.format(lead.delta)} 起。`:`当前主要问题未出现明确新增放大项。`;
+    }else if(count>0){
+      const weeks=issuePeriods("week").filter(p=>isCompleteAfterSalesPeriod(p,"week")).slice(-4),weekly=weeks.map(p=>sum(filtered(dataRows("issues","week"),[p]),"count"));
+      text="当前范围包含不完整周期或缺少等长完整基期，暂不判定环比好坏。";
+      detail=weeks.length?`最近4个完整周：${weeks.map((p,i)=>`${p.slice(-3)} ${fmt.format(weekly[i])}起`).join(" → ")}`:"等待完整基期后再判断变化";
+    }
+    return `<section class="after-conclusion"><strong>关键结论</strong><span>${safe(text)}</span><em>${safe(detail)}</em></section>`;
+  }
+  function burdenMatrix(){
+    if(!["cause","rate"].includes(state.module))return "";
+    const selectedPeriods=periodsFor(),periods=eligible(selectedPeriods);
+    if(!periods.length||periods.length!==selectedPeriods.length)return `<article class="card burden-matrix-card"><div class="section-head"><div><span class="section-index">04 · 负担矩阵</span><h2>销售规模 × 每万元售后起数 × 售后量</h2></div></div><div class="empty">当前周期销售分母未完整对齐，负担矩阵暂不计算</div></article>`;
+    const rows=filtered(dataRows("issues"),periods,{product:""}),map=new Map();
+    rows.forEach(r=>{const key=`${r.cat1}|§${r.cat2}`,x=map.get(key)||{cat1:r.cat1||"未分类",cat2:r.cat2||"未分类",count:0};x.count+=Number(r.count||0);map.set(key,x)});
+    let points=[...map.values()].map(x=>{x.sales=salesAmount(periods,x.cat1,x.cat2,"");x.rate=x.sales>0?x.count/x.sales*10000:NaN;return x}).filter(x=>x.count>0&&x.sales>0&&Number.isFinite(x.rate)).sort((a,b)=>b.count-a.count).slice(0,18);
+    if(!points.length)return `<article class="card burden-matrix-card"><div class="section-head"><div><span class="section-index">04 · 负担矩阵</span><h2>销售规模 × 每万元售后起数 × 售后量</h2></div></div><div class="empty">当前筛选没有同时具备售后起数和同期销售额的品类</div></article>`;
+    const W=1100,H=440,L=82,R=45,T=48,B=64,iw=W-L-R,ih=H-T-B,maxSales=Math.max(...points.map(x=>x.sales)),maxRate=Math.max(...points.map(x=>x.rate)),maxCount=Math.max(...points.map(x=>x.count)),scopeRate=sum(points,"count")/sum(points,"sales")*10000;
+    const sx=v=>L+Math.sqrt(v/maxSales)*iw,sy=v=>T+ih-v/maxRate*ih,radius=v=>7+Math.sqrt(v/maxCount)*19,labels=new Set(points.slice(0,8).map(x=>`${x.cat1}|§${x.cat2}`));
+    let svg=`<div class="burden-legend"><span><i class="risk-dot"></i>高于范围均值50%</span><span><i class="watch-dot"></i>高于范围均值10%–50%</span><span><i class="ok-dot"></i>其余品类</span></div><svg class="burden-matrix-svg" viewBox="0 0 ${W} ${H}"><line x1="${L}" y1="${T+ih}" x2="${W-R}" y2="${T+ih}" stroke="var(--line)"/><line x1="${L}" y1="${T}" x2="${L}" y2="${T+ih}" stroke="var(--line)"/><line x1="${L}" y1="${sy(scopeRate)}" x2="${W-R}" y2="${sy(scopeRate)}" stroke="var(--orange)" stroke-dasharray="7 7"/><text x="${W-R}" y="${sy(scopeRate)-8}" text-anchor="end" fill="var(--orange)" font-size="12">当前范围均值 ${scopeRate.toFixed(2)}</text><text x="${L}" y="${T-15}" fill="var(--muted)" font-size="12">每万元售后起数</text><text x="${W-R}" y="${H-15}" text-anchor="end" fill="var(--muted)" font-size="12">销售规模（平方根压缩）</text>`;
+    points.forEach(x=>{const color=x.rate>scopeRate*1.5?"var(--red)":x.rate>scopeRate*1.1?"var(--orange)":"var(--green)",rad=radius(x.count),key=`${x.cat1}|§${x.cat2}`,tip=safe(JSON.stringify({kind:"burdenMatrix",cat1:x.cat1,cat2:x.cat2,count:x.count,sales:x.sales,rate:x.rate,scopeRate}));svg+=`<g class="chart-node burden-point" data-tip="${tip}" data-action="matrix-drill" data-cat1="${safe(x.cat1)}" data-cat2="${safe(x.cat2)}"><circle cx="${sx(x.sales)}" cy="${sy(x.rate)}" r="${rad}" fill="${color}" fill-opacity=".7" stroke="white" stroke-width="2"/>${labels.has(key)?`<text x="${sx(x.sales)+rad+5}" y="${sy(x.rate)-rad+2}" fill="var(--text)" font-size="11" font-weight="800">${safe(x.cat2.slice(0,12))}</text>`:""}</g>`});
+    svg+=`</svg><div class="muted-box">每个气泡代表一个二级品类；横轴为同期电商销售额，纵轴为每万元售后起数，气泡大小代表售后起数。点击气泡进入该品类下钻。</div>`;
+    return `<article class="card burden-matrix-card"><div class="section-head"><div><span class="section-index">04 · 负担矩阵</span><h2>销售规模 × 每万元售后起数 × 售后量</h2><p class="subtitle">同时判断业务规模、单位销售额售后负担与影响范围</p></div></div>${svg}</article>`;
+  }
+  function analysisContext(){return analysisScope()+explanationCards()+conclusionBar()+burdenMatrix();}
 
   function sortControls(scope, current, items){return `<div class="toolbar">${items.map(([k,l])=>`<button class="sort-btn ${current.key===k?"active":""}" data-sort-scope="${scope}" data-sort-key="${k}">${l} ${current.key===k?(current.dir<0?"↓":"↑"):"⇅"}</button>`).join("")}</div>`}
   function table(headers, rows, min="720px"){return `<div class="table-wrap"><table style="min-width:${min}"><thead><tr>${headers.map((h,i)=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`}
@@ -220,7 +288,7 @@
     return svg+`</svg><div class="notice">最新售后至 ${safe(D.meta.afterSalesMax)}，销售数据至 ${safe(D.meta.salesMax)}。红线看售后起数是否下降；绿线 = 售后起数 ÷ 同期电商销售额 × 10,000，已排除经销商。该指标衡量单位销售额承担的售后事件，不等同于产品不良率；2025 年售后明细始于 ${safe(D.meta.afterSalesMin)}，不完整或缺失基期的每万元、同比和环比均显示“—”。</div>`;
   }
   function bindTooltips(){
-    const tip=$("#tooltip");document.querySelectorAll(".chart-node").forEach(n=>{n.onmouseenter=e=>{const d=JSON.parse(n.dataset.tip);if(d.kind==="comp")tip.innerHTML=`<b>${safe(d.p)}</b><br>登记金额：${money(d.amount)}<br>环比：${pct(d.am)}｜同比：${pct(d.ay)}<br>实际已打款：${money(d.paid)}<br>环比：${pct(d.pm)}｜同比：${pct(d.py)}`;else if(d.kind==="imbalanceTrend")tip.innerHTML=`<b>${safe(d.p)}</b><br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesShare.toFixed(2)}%<br>售后负担指数：<b>${d.index.toFixed(2)}</b>`;else if(d.kind==="imbalance")tip.innerHTML=`<b>${safe(d.product)}</b><br>${safe(d.code)}<br>售后起数：${fmt.format(d.count)}｜销售额：${money(d.salesAmount)}<br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesShare.toFixed(2)}%<br>售后负担指数：<b>${d.index.toFixed(2)}</b><br>每万元售后起数：${Number.isFinite(d.rate)?d.rate.toFixed(2):"—"}<br>实际赔付：${money(d.paid)}`;else{const imbalance=Number.isFinite(d.burdenIndex)?`<br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesAmountShare.toFixed(2)}%<br>售后负担指数：<b>${d.burdenIndex.toFixed(2)}</b>`:"";tip.innerHTML=`<b>${safe(d.p)}</b><br>售后起数：${fmt.format(d.count)}<br>环比：${pct(d.cm)}｜同比：${pct(d.cy)}<br>每万元售后起数：${Number.isFinite(d.rate)?d.rate.toFixed(2):"—"}<br>环比：${pct(d.rm)}｜同比：${pct(d.ry)}${imbalance}`};tip.style.display="block";};n.onmousemove=e=>{tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY+14}px`};n.onmouseleave=()=>tip.style.display="none";});
+    const tip=$("#tooltip");document.querySelectorAll(".chart-node").forEach(n=>{n.onmouseenter=e=>{const d=JSON.parse(n.dataset.tip);if(d.kind==="comp")tip.innerHTML=`<b>${safe(d.p)}</b><br>登记金额：${money(d.amount)}<br>环比：${pct(d.am)}｜同比：${pct(d.ay)}<br>实际已打款：${money(d.paid)}<br>环比：${pct(d.pm)}｜同比：${pct(d.py)}`;else if(d.kind==="imbalanceTrend")tip.innerHTML=`<b>${safe(d.p)}</b><br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesShare.toFixed(2)}%<br>售后负担指数：<b>${d.index.toFixed(2)}</b>`;else if(d.kind==="imbalance")tip.innerHTML=`<b>${safe(d.product)}</b><br>${safe(d.code)}<br>售后起数：${fmt.format(d.count)}｜销售额：${money(d.salesAmount)}<br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesShare.toFixed(2)}%<br>售后负担指数：<b>${d.index.toFixed(2)}</b><br>每万元售后起数：${Number.isFinite(d.rate)?d.rate.toFixed(2):"—"}<br>实际赔付：${money(d.paid)}`;else if(d.kind==="burdenMatrix")tip.innerHTML=`<b>${safe(d.cat1)} › ${safe(d.cat2)}</b><br>售后起数：${fmt.format(d.count)}<br>同期销售额：${money(d.sales)}<br>每万元售后起数：<b>${d.rate.toFixed(2)}</b><br>当前范围均值：${d.scopeRate.toFixed(2)}`;else{const imbalance=Number.isFinite(d.burdenIndex)?`<br>售后起数占比：${d.afterShare.toFixed(2)}%<br>销售额占比：${d.salesAmountShare.toFixed(2)}%<br>售后负担指数：<b>${d.burdenIndex.toFixed(2)}</b>`:"";tip.innerHTML=`<b>${safe(d.p)}</b><br>售后起数：${fmt.format(d.count)}<br>环比：${pct(d.cm)}｜同比：${pct(d.cy)}<br>每万元售后起数：${Number.isFinite(d.rate)?d.rate.toFixed(2):"—"}<br>环比：${pct(d.rm)}｜同比：${pct(d.ry)}${imbalance}`};tip.style.display="block";};n.onmousemove=e=>{tip.style.left=`${e.clientX+14}px`;tip.style.top=`${e.clientY+14}px`};n.onmouseleave=()=>tip.style.display="none";});
   }
   function imbalanceTrend(){
     if(!state.cat1&&!state.cat2)return `<div class="muted-box">选择一级大类或二级品类后，这里显示“售后起数占比 ÷ 销售额占比”的售后负担指数趋势。</div>`;
@@ -238,7 +306,7 @@
       pp.forEach(x=>{x.code=rr.find(r=>r.product===x.product)?.code||"";x.rate=rateFor(rateMap.get(x.product)||0,periods,state.cat1,state.cat2,x.product,x.code)});pp.sort((a,b)=>b.count-a.count);
       return `<div class="section-head"><div><h2>${safe(state.causeIssue)}：问题产品下钻</h2><p class="subtitle">选择产品后，右侧趋势图同步到该产品与问题</p></div><button class="back" data-action="cause-back">← 返回 TOP 10</button></div>`+table(["产品 / 编码","售后起数","占比","每万元售后起数","趋势"],pp.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x.product)}<br><small>${safe(x.code||"无编码")}</small></td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,sum(rr,"count"))*100).toFixed(1)}%</td><td>${Number.isFinite(x.rate)?x.rate.toFixed(2):"—"}</td><td><button class="drill" data-action="select-product" data-product="${safe(x.product)}" data-issue="${safe(state.causeIssue)}">同步趋势</button></td></tr>`));
     }
-    const comparable=validComparison(periods,prev),gg=group(rows,"issue");gg.forEach(x=>{const pr=group(filtered(dataRows("issues"),prev,{product:""}).filter(r=>r.issue===x.issue),"issue")[0];x.delta=comparable?change(x.count,pr?.count||0):NaN});gg.sort((a,b)=>b.count-a.count);const top=gg.slice(0,10),max=top[0]?.count||1;
+    const comparable=validIssueComparison(periods,prev),gg=group(rows,"issue");gg.forEach(x=>{const pr=group(filtered(dataRows("issues"),prev,{product:""}).filter(r=>r.issue===x.issue),"issue")[0];x.delta=comparable?change(x.count,pr?.count||0):NaN});gg.sort((a,b)=>b.count-a.count);const top=gg.slice(0,10),max=top[0]?.count||1;
     return `<div class="section-head"><div><h2>TOP 10 高频问题</h2><p class="subtitle">问题数量、占比与较上期变化；点击任一行查看二级品类与商品构成</p></div></div>`+table(["具体问题","规模","数量","占比","较上期","下钻"],top.map((x,i)=>`<tr class="click-row" data-action="cause-drill" data-issue="${safe(x.issue)}"><td><span class="rank">${i+1}</span>${safe(x.issue)}</td><td><div class="bar"><i style="width:${x.count/max*100}%"></i></div></td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,total)*100).toFixed(1)}%</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td><button class="drill" data-action="cause-drill" data-issue="${safe(x.issue)}">查看商品构成 ›</button></td></tr>`));
   }
 
@@ -253,7 +321,7 @@
 
   function openCauseDrill(issue){
     if(!window.DASHBOARD_MODAL)return;
-    const periods=periodsFor(),previous=previousPeriods(periods),comparable=validComparison(periods,previous),source=dataRows("issues"),weeklySource=dataRows("issues","week"),scope=r=>(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2)&&r.issue===issue;
+    const periods=periodsFor(),previous=previousPeriods(periods),comparable=validIssueComparison(periods,previous),source=dataRows("issues"),weeklySource=dataRows("issues","week"),scope=r=>(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2)&&r.issue===issue;
     const currentRows=source.filter(r=>periods.includes(r.period)&&scope(r)),previousRows=source.filter(r=>previous.includes(r.period)&&scope(r)),total=sum(currentRows,"count"),weeks=reviewWeeksForCurrentSelection(),byKey=(rows)=>{const map=new Map();rows.forEach(r=>{const key=`${r.cat2||"未分类"}|§${r.product||"未填写商品"}|§${r.code||""}`,x=map.get(key)||{cat2:r.cat2||"未分类",product:r.product||"未填写商品",code:r.code||"",count:0};x.count+=Number(r.count||0);map.set(key,x);});return map;},currentMap=byKey(currentRows),previousMap=byKey(previousRows);
     const rows=[...currentMap.entries()].map(([key,x])=>{const last=previousMap.get(key)?.count||0,trendValues=weeks.map(p=>sum(weeklySource.filter(r=>r.period===p&&scope(r)&&r.cat2===x.cat2&&r.product===x.product&&String(r.code||"")===String(x.code||"")),"count"));return {...x,last,delta:comparable?change(x.count,last):NaN,trendValues};}).sort((a,b)=>b.count-a.count).slice(0,10),categoryCurrent=new Map(),categoryPrevious=new Map();
     currentRows.forEach(r=>categoryCurrent.set(r.cat2||"未分类",(categoryCurrent.get(r.cat2||"未分类")||0)+Number(r.count||0)));previousRows.forEach(r=>categoryPrevious.set(r.cat2||"未分类",(categoryPrevious.get(r.cat2||"未分类")||0)+Number(r.count||0)));
@@ -286,7 +354,7 @@
     return `<div class="comp-filters">${selectHtml("compMonth","登记月份",state.compMonth,monthItems)}${selectHtml("compPlatform","平台",state.compPlatform,[["","全部平台"],...platforms.map(x=>[x,x])])}${selectHtml("compShop","店铺",state.compShop,[["","全部店铺"],...shops.map(x=>[x,x])])}${selectHtml("compPaymentStatus","打款状态",state.compPaymentStatus,[["","全部状态"],["已打款","已打款"],["未打款","未打款"]])}${selectHtml("compRecordType","登记类型",state.compRecordType,[["","全部类型"],["售后登记","售后登记"],["打款登记","打款登记"]])}</div>`;
   }
   function compTable(){
-    const periods=compPeriods(),completePeriods=eligible(periods),base=filteredComp(dataRows("comp"),periods,{product:""}),eligibleBase=filteredComp(dataRows("comp"),completePeriods,{product:""}),prev=previousPeriods(periods),prevRows=validComparison(periods,prev)?filteredComp(dataRows("comp"),prev,{product:""}):[];let rows,title,back="",nextAction="",key,scopeRows=base,scopeEligible=eligibleBase,scopePrev=prevRows;
+    const periods=compPeriods(),completePeriods=eligible(periods),base=filteredComp(dataRows("comp"),periods,{product:""}),eligibleBase=filteredComp(dataRows("comp"),completePeriods,{product:""}),prev=previousPeriods(periods),prevRows=validIssueComparison(periods,prev)?filteredComp(dataRows("comp"),prev,{product:""}):[];let rows,title,back="",nextAction="",key,scopeRows=base,scopeEligible=eligibleBase,scopePrev=prevRows;
     if(state.compLevel==="shops"&&!state.compPlatform)state.compLevel="platforms";if(state.compLevel==="categories"&&!state.compShop)state.compLevel=state.compPlatform?"shops":"platforms";
     if(state.compLevel==="platforms"){key="platform";rows=group(scopeRows,key);title="平台赔付金额";nextAction="comp-platform";}
     else if(state.compLevel==="shops"){key="shop";rows=group(scopeRows,key);title=`${state.compPlatform}：店铺赔付金额`;back=`<button class="back" data-action="comp-back">← 返回平台</button>`;nextAction="comp-shop";}
@@ -326,7 +394,7 @@
     rateRows.forEach(r=>{const key=`${r.cat1}|${r.cat2}|${r.product}|${r.code}|${r.issue}`;rateMap.set(key,(rateMap.get(key)||0)+Number(r.count||0))});
     const prevMap=new Map();prevRows.forEach(r=>{const key=`${r.cat1}|${r.cat2}|${r.product}|${r.code}|${r.issue}`;prevMap.set(key,(prevMap.get(key)||0)+Number(r.count||0))});
     const compMap=new Map();comps.forEach(r=>{const key=`${r.cat1}|${r.cat2}|${r.product}|${r.code}|${r.issue}`;compMap.set(key,(compMap.get(key)||0)+Number(r.paidAmount||0))});
-    const complete=eligible(periods),total=sum(rows,"count"),totalComparable=sum(rateRows,"count"),totalSales=salesAmount(complete,state.cat1,state.cat2,""),scopeRate=totalSales>0?totalComparable/totalSales*10000:NaN,comparable=validComparison(periods,prev);for(const [key,x] of map){x.prev=prevMap.get(key)||0;x.delta=comparable?change(x.count,x.prev):NaN;x.comparableCount=rateMap.get(key)||0;x.salesAmount=salesAmount(complete,x.cat1,x.cat2,x.product,"","",x.code);x.rate=x.salesAmount>0?x.comparableCount/x.salesAmount*10000:NaN;x.share=totalComparable>0?x.comparableCount/totalComparable*100:NaN;x.salesAmountShare=totalSales>0?x.salesAmount/totalSales*100:NaN;x.burdenIndex=x.salesAmountShare>0?x.share/x.salesAmountShare:NaN;x.comp=compMap.get(key)||0;x.priority=x.count+Math.min(40,Number.isFinite(x.burdenIndex)?x.burdenIndex*8:0)+(x.delta>20?20:0)+(x.comp>1000?20:0);x.tags=[];if(x.count>=20)x.tags.push("高频");if(Number.isFinite(x.burdenIndex)&&x.burdenIndex>1.5)x.tags.push("高售后负担");if(Number.isFinite(x.rate)&&Number.isFinite(scopeRate)&&x.rate>scopeRate*1.5&&x.comparableCount>=3)x.tags.push("单位销售额售后偏高");if(x.delta>20)x.tags.push("持续上升");if(comparable&&x.prev===0&&x.count>=5)x.tags.push("新增问题");if(x.salesAmount>0&&x.salesAmount<10000)x.tags.push("低销售额样本");if(x.comp>1000)x.tags.push("高赔偿");}
+    const complete=eligible(periods),total=sum(rows,"count"),totalComparable=sum(rateRows,"count"),totalSales=salesAmount(complete,state.cat1,state.cat2,""),scopeRate=totalSales>0?totalComparable/totalSales*10000:NaN,comparable=validIssueComparison(periods,prev);for(const [key,x] of map){x.prev=prevMap.get(key)||0;x.delta=comparable?change(x.count,x.prev):NaN;x.comparableCount=rateMap.get(key)||0;x.salesAmount=salesAmount(complete,x.cat1,x.cat2,x.product,"","",x.code);x.rate=x.salesAmount>0?x.comparableCount/x.salesAmount*10000:NaN;x.share=totalComparable>0?x.comparableCount/totalComparable*100:NaN;x.salesAmountShare=totalSales>0?x.salesAmount/totalSales*100:NaN;x.burdenIndex=x.salesAmountShare>0?x.share/x.salesAmountShare:NaN;x.comp=compMap.get(key)||0;x.priority=x.count+Math.min(40,Number.isFinite(x.burdenIndex)?x.burdenIndex*8:0)+(x.delta>20?20:0)+(x.comp>1000?20:0);x.tags=[];if(x.count>=20)x.tags.push("高频");if(Number.isFinite(x.burdenIndex)&&x.burdenIndex>1.5)x.tags.push("高售后负担");if(Number.isFinite(x.rate)&&Number.isFinite(scopeRate)&&x.rate>scopeRate*1.5&&x.comparableCount>=3)x.tags.push("单位销售额售后偏高");if(x.delta>20)x.tags.push("持续上升");if(comparable&&x.prev===0&&x.count>=5)x.tags.push("新增问题");if(x.salesAmount>0&&x.salesAmount<10000)x.tags.push("低销售额样本");if(x.comp>1000)x.tags.push("高赔偿");}
     return [...map.values()].sort((a,b)=>b.priority-a.priority);
   }
   function productImbalanceChart(periods){
@@ -345,12 +413,12 @@
     const periods=periodsFor(),complete=eligible(periods),previous=previousPeriods(periods),rows=filtered(dataRows("comp"),periods,{product:""}),rateRows=filtered(dataRows("comp"),complete,{product:""}),prev=filtered(dataRows("comp"),previous,{product:""}),map=new Map(),pm=new Map(),rateMap=new Map();
     rows.forEach(r=>{const key=`${r.cat1}|${r.cat2}|${r.product}|${r.code}`,x=map.get(key)||{cat1:r.cat1,cat2:r.cat2,product:r.product,code:r.code,amount:0,paidAmount:0,count:0,paidCount:0,maxSingle:0};x.amount+=Number(r.amount||0);x.paidAmount+=Number(r.paidAmount||0);x.count+=Number(r.count||0);x.paidCount+=Number(r.paidCount||0);x.maxSingle=Math.max(x.maxSingle,Number(r.maxSingle||0));map.set(key,x)});
     rateRows.forEach(r=>{const k=`${r.cat1}|${r.cat2}|${r.product}|${r.code}`;rateMap.set(k,(rateMap.get(k)||0)+Number(r.paidAmount||0))});prev.forEach(r=>{const k=`${r.cat1}|${r.cat2}|${r.product}|${r.code}`;pm.set(k,(pm.get(k)||0)+Number(r.paidAmount||0))});
-    const comparable=validComparison(periods,previous),total=sum(rows,"paidAmount"),totalSales=salesAmount(complete,state.cat1,state.cat2,""),auditKeys=new Set(D.compensationAudit.map(a=>`${a.code}|${a.product}`));let list=[...map.entries()].map(([key,x])=>{x.prev=pm.get(key)||0;x.delta=comparable?change(x.paidAmount,x.prev):NaN;x.avg=x.paidCount?x.paidAmount/x.paidCount:0;x.salesAmount=salesAmount(complete,x.cat1,x.cat2,x.product,"","",x.code);x.compRate=x.salesAmount?(rateMap.get(key)||0)/x.salesAmount*100:NaN;x.share=x.paidAmount/Math.max(1,total)*100;x.salesShare=totalSales>0?x.salesAmount/totalSales*100:NaN;x.financialIndex=x.salesShare>0?x.share/x.salesShare:NaN;x.tags=[];if(x.delta>50)x.tags.push("实付金额激增");if(x.financialIndex>1.5)x.tags.push("赔付过度");if(x.avg>500)x.tags.push("高客单赔偿");if(x.maxSingle>1000)x.tags.push("大额单笔");if(x.paidCount>=5)x.tags.push("重复打款");if(x.share>10)x.tags.push("金额集中");if(auditKeys.has(`${x.code}|${x.product}`))x.tags.push("疑似录入错误");return x}).sort((a,b)=>b.paidAmount-a.paidAmount).slice(0,50);
+    const comparable=validIssueComparison(periods,previous),total=sum(rows,"paidAmount"),totalSales=salesAmount(complete,state.cat1,state.cat2,""),auditKeys=new Set(D.compensationAudit.map(a=>`${a.code}|${a.product}`));let list=[...map.entries()].map(([key,x])=>{x.prev=pm.get(key)||0;x.delta=comparable?change(x.paidAmount,x.prev):NaN;x.avg=x.paidCount?x.paidAmount/x.paidCount:0;x.salesAmount=salesAmount(complete,x.cat1,x.cat2,x.product,"","",x.code);x.compRate=x.salesAmount?(rateMap.get(key)||0)/x.salesAmount*100:NaN;x.share=x.paidAmount/Math.max(1,total)*100;x.salesShare=totalSales>0?x.salesAmount/totalSales*100:NaN;x.financialIndex=x.salesShare>0?x.share/x.salesShare:NaN;x.tags=[];if(x.delta>50)x.tags.push("实付金额激增");if(x.financialIndex>1.5)x.tags.push("赔付过度");if(x.avg>500)x.tags.push("高客单赔偿");if(x.maxSingle>1000)x.tags.push("大额单笔");if(x.paidCount>=5)x.tags.push("重复打款");if(x.share>10)x.tags.push("金额集中");if(auditKeys.has(`${x.code}|${x.product}`))x.tags.push("疑似录入错误");return x}).sort((a,b)=>b.paidAmount-a.paidAmount).slice(0,50);
     return `<div class="section-head"><div><h2>财务赔偿异常清单</h2><p class="subtitle">赔付过度指数大于 1，表示实付占比高于该产品销售额贡献</p></div></div>`+table(["产品 / 编码","登记金额","实际已打款","已打款笔数","经营期赔付率","实付占比","销售额占比","赔付过度指数","较上期","异常标签"],list.map((x,i)=>`<tr class="click-row" data-action="jump-comp" data-cat1="${safe(x.cat1)}" data-cat2="${safe(x.cat2)}" data-product="${safe(x.product)}"><td><span class="rank">${i+1}</span>${safe(x.product)}<br><small>${safe(x.code)}</small></td><td>${money(x.amount)}</td><td>${money(x.paidAmount)}</td><td>${fmt.format(x.paidCount)}</td><td>${Number.isFinite(x.compRate)?`${x.compRate.toFixed(3)}%`:"—"}</td><td>${x.share.toFixed(1)}%</td><td>${Number.isFinite(x.salesShare)?`${x.salesShare.toFixed(2)}%`:"—"}</td><td>${Number.isFinite(x.financialIndex)?`<span class="index-pill ${x.financialIndex>1.5?"risk":x.financialIndex>1.2?"watch":""}">${x.financialIndex.toFixed(2)}</span>`:"—"}</td><td class="${valClass(x.delta)}">${pct(x.delta)}</td><td>${x.tags.map(t=>`<span class="tag red">${t}</span>`).join("")||"—"}</td></tr>`),"1380px")+`<div class="muted-box">点击任一行，直接跳到“赔偿分析”查看平台 → 店铺 → 品类 → 原因 → 产品下钻。</div>`;
   }
   function renderAction(){body.innerHTML=`<div class="subtabs"><button data-action-tab="product" class="${state.actionTab==="product"?"active":""}">产品问题优先清单</button><button data-action-tab="finance" class="${state.actionTab==="finance"?"active":""}">财务赔偿异常清单</button></div><article class="card ${state.actionTab==="finance"?"finance action-card":"action-card"}">${state.actionTab==="product"?productActions():financeActions()}</article>`;bindTooltips();}
 
-  function render(){currentMetrics();if(state.module==="cause")renderCause();else if(state.module==="rate")renderRate();else if(state.module==="comp")renderComp();else renderAction();}
+  function render(){currentMetrics();if(state.module==="cause")renderCause();else if(state.module==="rate")renderRate();else if(state.module==="comp")renderComp();else renderAction();body.insertAdjacentHTML("afterbegin",analysisContext());bindTooltips();}
   function refresh(){refreshControls();render();}
   document.addEventListener("click",async e=>{
     const moduleBtn=e.target.closest(".tabs [data-module]");
@@ -380,6 +448,7 @@
     const tab=e.target.closest("[data-action-tab]");if(tab){state.actionTab=tab.dataset.actionTab;state.issue="";refresh();return;}
     const a=e.target.closest("[data-action]");if(!a)return;const act=a.dataset.action;
     if(act==="cause-drill"){openCauseDrill(a.dataset.issue);return;}
+    if(act==="matrix-drill"){state.module="rate";state.cat1=a.dataset.cat1;state.cat2=a.dataset.cat2;state.issue="";state.product="";resetDrills();refresh();return;}
     const needsProduct=act==="select-product"||act==="comp-reason";
     const needsShop=act==="jump-comp";
     if(act==="cause-back"){state.causeLevel="issues";state.causeIssue="";state.product="";state.issue="";}
