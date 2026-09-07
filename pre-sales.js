@@ -23,7 +23,7 @@
     if (afterSalesPromise) return afterSalesPromise;
     $("#dataStatus").textContent = "正在加载售后分析数据…";
     $("#dashboardBody").innerHTML = `<article class="card loading-card"><div class="loading-dot"></div><h2>正在加载售后数据…</h2><p class="subtitle">首次进入售后页加载，后续切换直接使用缓存。</p></article>`;
-    afterSalesPromise = loadScript("../data/after-sales-data.js?v=20260907-1").then(() => loadScript("../after-sales.js?v=20260907-1")).catch(error => {
+    afterSalesPromise = loadScript("../data/after-sales-data.js?v=20260907-2").then(() => loadScript("../after-sales.js?v=20260907-2")).catch(error => {
       afterSalesPromise = null;
       $("#dashboardBody").innerHTML = `<article class="card"><div class="empty">${safe(error.message)}，请刷新后重试。</div></article>`;
       throw error;
@@ -35,7 +35,7 @@
     if (returnRefundPromise) return returnRefundPromise;
     $("#dataStatus").textContent = "正在加载退货退款分析数据…";
     $("#returnDashboardBody").innerHTML = `<article class="card loading-card"><div class="loading-dot"></div><h2>正在加载退货退款数据…</h2><p class="subtitle">SKU明细仅在首次进入本页时加载，后续切换直接使用缓存。</p></article>`;
-    returnRefundPromise = loadScript("../data/return-refund-data.js?v=20260824-20").then(() => loadScript("../returns.js?v=20260824-20")).catch(error => {
+    returnRefundPromise = loadScript("../data/return-refund-data.js?v=20260907-2").then(() => loadScript("../returns.js?v=20260907-2")).catch(error => {
       returnRefundPromise = null;
       $("#returnDashboardBody").innerHTML = `<article class="card"><div class="empty">${safe(error.message)}，请刷新后重试。</div></article>`;
       throw error;
@@ -57,12 +57,21 @@
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
   }
   const currentPartial = () => state.grain === "month" ? D.meta.sourceMax.slice(0, 7) : isoWeek(D.meta.sourceMax);
-  const maxComplete = () => state.grain === "month" ? previousMonth(D.meta.commonComplete.slice(0, 7)) : isoWeek(D.meta.commonComplete);
+  function latestCompleteWeek() {
+    const date = new Date(`${D.meta.commonComplete}T00:00:00Z`), day = date.getUTCDay() || 7;
+    if (day < 7) date.setUTCDate(date.getUTCDate() - day);
+    return isoWeek(date.toISOString().slice(0, 10));
+  }
+  function latestCompleteMonth() {
+    const date = new Date(`${D.meta.commonComplete}T00:00:00Z`), monthEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+    return date.getUTCDate() === monthEnd.getUTCDate() ? D.meta.commonComplete.slice(0, 7) : previousMonth(D.meta.commonComplete.slice(0, 7));
+  }
+  const maxComplete = () => state.grain === "month" ? latestCompleteMonth() : latestCompleteWeek();
+  const includesPartialPeriod = list => list.includes(currentPartial()) && currentPartial() > maxComplete();
   function setDefaultRange() {
     const all = periods();
     if (state.grain === "week") {
-      const complete = all.filter(period => period <= maxComplete());
-      state.start = complete.at(-4) || all[0] || ""; state.end = complete.at(-1) || all.at(-1) || "";
+      state.start = all.at(-4) || all[0] || ""; state.end = all.at(-1) || "";
     } else {
       const currentYear = D.meta.sourceMax.slice(0, 4), yearPeriods = all.filter(period => period.startsWith(currentYear));
       state.start = yearPeriods[0] || all[0] || ""; state.end = all.at(-1) || "";
@@ -100,6 +109,10 @@
     result.daily = result.days ? result.consult / result.days : NaN;
     return result;
   }
+  function periodMetric(period, key, extra = {}) {
+    const list = filtered([period], extra);
+    return list.length ? combine(list)[key] : NaN;
+  }
   const change = (current, previous) => Number.isFinite(current) && Number.isFinite(previous) && previous !== 0 ? (current / previous - 1) * 100 : NaN;
   const metrics = {
     consult:{ label:"咨询人数", key:"consult", format:value=>`${fmt.format(value)}人`, short:value=>fmt.format(value), note:"有效客服咨询人数" },
@@ -112,6 +125,7 @@
     refund:{ label:"退款率", key:"refund", format:value=>Number.isFinite(value)?`${value.toFixed(2)}%`:"—", short:value=>`${value.toFixed(1)}%`, note:"异常值不纳入汇总", inverse:true }
   };
   const metric = () => metrics[state.metric];
+  const preSeriesColors = ["#4f7fe8", "#51cfa2", "#f7ad12", "#ef6a4d", "#8a63d2", "#25a5b8", "#6b778c"];
   function metricCardDisplay(id, value, definition) {
     const full = definition.format(value);
     if (!Number.isFinite(value)) return {display:full, full};
@@ -134,7 +148,7 @@
     shopSelect.innerHTML = `<option value="">全部店铺</option>${shops.map(value => `<option value="${safe(value)}">${safe(value)}</option>`).join("")}`; shopSelect.value = state.shop;
     document.querySelectorAll("[data-pre-grain]").forEach(button => button.classList.toggle("active", button.dataset.preGrain === state.grain));
     document.querySelectorAll("[data-pre-page]").forEach(button => button.classList.toggle("active", button.dataset.prePage === state.page));
-    scope.textContent = `${state.start} 至 ${state.end} · ${state.platform || "全部平台"} · ${state.shop || "全部店铺"}`;
+    scope.textContent = `${state.start} 至 ${state.end} · ${state.platform || "全部平台"} · ${state.shop || "全部店铺"}${includesPartialPeriod(selectedPeriods())?` · 最新${state.grain==="month"?"月":"周"}为部分填报`:""}`;
   }
   function renderKpis() {
     if (state.page === "audit") {
@@ -143,43 +157,69 @@
       kpis.innerHTML = cards.map(([label,value,note]) => `<article class="kpi"><span class="label">${label}</span><strong>${value}</strong><small>${note}</small></article>`).join(""); return;
     }
     const current = combine(filtered()), priorList = previousPeriods(selectedPeriods()), previous = combine(filtered(priorList));
-    const comparable = priorList.length === selectedPeriods().length;
+    const comparable = priorList.length === selectedPeriods().length && !includesPartialPeriod(selectedPeriods());
     kpis.className = "pre-metric-grid";
     kpis.innerHTML = Object.entries(metrics).map(([id, definition]) => {
       const value = current[definition.key]; let note = definition.note;
       if (id === "refund" && !Number.isFinite(value)) note = `${D.meta.refundAnomalies}条异常，暂不汇总`;
       else if (comparable && Number.isFinite(value)) note = `较前期 ${pct(change(value, previous[definition.key]))}`;
+      else if (includesPartialPeriod(selectedPeriods())) note = `含部分周，按实际已填累计，暂不比较`;
       const shown = metricCardDisplay(id, value, definition);
       return `<button class="pre-metric-card ${state.metric===id?"active":""}" data-pre-metric="${id}" title="${safe(definition.label)}：${safe(shown.full)}"><span>${definition.label}</span><strong class="pre-metric-value">${safe(shown.display)}</strong><small>${note}${shown.display!==shown.full?` · 悬停看完整值`:""}</small></button>`;
     }).join("");
   }
 
-  const periodSeries = () => selectedPeriods().map(period => ({ period, values:combine(filtered([period])) }));
-  function yoyValue(period, key) {
+  function trendGroups() {
+    const selected = selectedPeriods();
+    if (state.shop) return [{ name:state.shop, platform:state.platform, shop:state.shop, extra:{ platform:state.platform, shop:state.shop } }];
+    if (state.platform) {
+      const shops = [...new Set(filtered(selected, { platform:state.platform, shop:"" }).map(row => row.s))];
+      return shops.map(shop => ({ name:shop, platform:state.platform, shop, extra:{ platform:state.platform, shop } }));
+    }
+    return D.meta.platforms.map(platform => ({ name:platform, platform, shop:"", extra:{ platform, shop:"" } }));
+  }
+  function trendScopeLabel(groups) {
+    if (state.shop) return `${state.shop}单店趋势`;
+    if (state.platform) return `${state.platform} · ${groups.length}家店铺对比`;
+    return `${groups.length}个平台对比`;
+  }
+  function yoyValue(period, key, extra) {
     if (state.grain !== "month") return NaN;
     const target = `${Number(period.slice(0,4))-1}-${period.slice(5)}`;
-    return combine(filtered([target]))[key];
+    return periodMetric(target, key, extra);
   }
   function trendChart() {
-    const definition = metric(), list = periodSeries(), values = list.map(item => item.values[definition.key]), valid = values.filter(Number.isFinite);
+    const definition = metric(), periodList = selectedPeriods();
+    const groups = trendGroups().map((group, index) => ({
+      ...group,
+      color:preSeriesColors[index % preSeriesColors.length],
+      values:periodList.map(period => periodMetric(period, definition.key, group.extra))
+    })).filter(group => group.values.some(Number.isFinite));
+    const valid = groups.flatMap(group => group.values).filter(Number.isFinite);
     if (!valid.length) return `<div class="empty"><strong>${definition.label}暂无可用趋势数据</strong><br>当前源数据只保留退款率异常清单，未将有效退款率写入月/周汇总。</div>`;
     const width=1000,height=380,left=72,right=45,top=58,bottom=58,innerWidth=width-left-right,innerHeight=height-top-bottom;
     const min=definition.inverse?Math.min(...valid):0,max=Math.max(...valid),padding=Math.max((max-min)*.15,max*.08,1),domainMin=definition.inverse?Math.max(0,min-padding):0,domainMax=max+padding;
-    const x=index=>left+(list.length===1?innerWidth/2:index*innerWidth/(list.length-1));
+    const x=index=>left+(periodList.length===1?innerWidth/2:index*innerWidth/(periodList.length-1));
     const y=value=>top+innerHeight-(value-domainMin)/Math.max(1e-9,domainMax-domainMin)*innerHeight;
-    let path="";
-    values.forEach((value,index)=>{if(Number.isFinite(value))path+=`${path&&Number.isFinite(values[index-1])?"L":"M"}${x(index)},${y(value)} `;});
-    let svg=`<svg class="trend-svg" viewBox="0 0 ${width} ${height}">`;
+    const legend = `<div class="pre-series-legend"><span class="pre-series-note">${safe(trendScopeLabel(groups))}</span>${groups.map(group=>`<span><i style="background:${group.color}"></i>${safe(group.name)}</span>`).join("")}</div>`;
+    let svg=`<svg class="trend-svg pre-multi-trend" viewBox="0 0 ${width} ${height}">`;
     for(let index=0;index<4;index++){const gridY=top+index*innerHeight/3;svg+=`<line x1="${left}" y1="${gridY}" x2="${width-right}" y2="${gridY}" stroke="var(--line)"/>`;}
-    svg+=`<text x="${left}" y="${top-17}" fill="var(--muted)" font-size="12">${safe(definition.label)} · ${definition.inverse?"越低越好":"越高越好"}</text><path d="${path.trim()}" fill="none" stroke="var(--red)" stroke-width="4"/>`;
-    list.forEach((item,index)=>{
-      const value=values[index];svg+=`<text x="${x(index)}" y="${height-20}" text-anchor="middle" fill="var(--muted)" font-size="12">${safe(item.period.replace(/^\d{4}-/,""))}</text>`;
-      if(!Number.isFinite(value))return;
-      const previous=index?values[index-1]:NaN,yoy=yoyValue(item.period,definition.key);
-      const tip=safe(JSON.stringify({period:item.period,label:definition.label,value:definition.format(value),mom:change(value,previous),yoy:change(value,yoy),partial:item.period===currentPartial()}));
-      svg+=`<g class="pre-chart-node" data-pre-tip="${tip}"><circle cx="${x(index)}" cy="${y(value)}" r="7" fill="white" stroke="var(--red)" stroke-width="4"/><text x="${x(index)}" y="${Math.max(18,y(value)-13)}" text-anchor="middle" fill="var(--red)" font-size="12" font-weight="800">${safe(definition.short(value))}</text></g>`;
+    svg+=`<text x="${left}" y="${top-17}" fill="var(--muted)" font-size="12">${safe(definition.label)} · ${definition.inverse?"越低越好":"越高越好"}</text>`;
+    periodList.forEach((period,index)=>{svg+=`<text x="${x(index)}" y="${height-20}" text-anchor="middle" fill="var(--muted)" font-size="12">${safe(period.replace(/^\d{4}-/,""))}</text>`;});
+    groups.forEach(group=>{
+      let path="";
+      group.values.forEach((value,index)=>{if(Number.isFinite(value))path+=`${path&&Number.isFinite(group.values[index-1])?"L":"M"}${x(index)},${y(value)} `;});
+      svg+=`<path d="${path.trim()}" fill="none" stroke="${group.color}" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`;
+      group.values.forEach((value,index)=>{
+        if(!Number.isFinite(value))return;
+        const period=periodList[index],previous=index?group.values[index-1]:NaN,yoy=yoyValue(period,definition.key,group.extra);
+        const tip=safe(JSON.stringify({series:group.name,period,label:definition.label,value:definition.format(value),mom:change(value,previous),yoy:change(value,yoy),partial:period===currentPartial()}));
+        const drillAttrs=`data-pre-platform="${safe(group.platform)}"${group.shop?` data-pre-shop="${safe(group.shop)}"`:""}`;
+        const latestLabel=index===periodList.length-1?`<text x="${x(index)}" y="${Math.max(18,y(value)-12)}" text-anchor="middle" fill="${group.color}" font-size="11" font-weight="800">${safe(definition.short(value))}</text>`:"";
+        svg+=`<g class="pre-chart-node" data-pre-tip="${tip}" ${drillAttrs}><circle cx="${x(index)}" cy="${y(value)}" r="6" fill="var(--panel)" stroke="${group.color}" stroke-width="3"/>${latestLabel}</g>`;
+      });
     });
-    return `${svg}</svg><div class="notice">${currentPartial()} 为部分周期；月度悬停显示环比和同比，周度显示较上周变化。</div>`;
+    return `${legend}${svg}</svg><div class="notice">默认同时比较4个平台；选择平台后切换为该平台店铺对比，选择店铺后显示单店趋势。${currentPartial()} 为部分周期；月度悬停显示环比和同比，周度显示较上周变化。</div>`;
   }
   function groupItems(level) {
     const source=filtered(), names=[...new Set(source.map(row=>level==="platform"?row.pf:row.s))];
@@ -197,13 +237,13 @@
   }
   function miniTrend(shop,key) {
     return selectedPeriods().slice(-4).map(period=>{
-      const value=combine(filtered([period],{shop}))[key];
+      const value=periodMetric(period, key, {shop});
       return `${period.replace(/^\d{4}-/,"")} ${Number.isFinite(value)?metric().short(value):"—"}`;
     }).join(" → ");
   }
   function rankingTable() {
     const definition=metric(),shops=[...new Set(filtered().map(row=>row.s))];
-    const items=shops.map(shop=>({shop,platform:filtered().find(row=>row.s===shop)?.pf||"",values:combine(filtered(selectedPeriods(),{shop}))})).filter(item=>Number.isFinite(item.values[definition.key])).sort((a,b)=>definition.inverse?a.values[definition.key]-b.values[definition.key]:b.values[definition.key]-a.values[definition.key]);
+    const items=shops.map(shop=>({shop,platform:filtered().find(row=>row.s===shop)?.pf||"",values:combine(filtered(selectedPeriods(),{shop}))})).filter(item=>Number.isFinite(item.values[definition.key])).sort((a,b)=>definition.inverse?a.values[definition.key]-b.values[definition.key]:b.values[definition.key]-a.values[definition.key]).slice(0,10);
     if(!items.length)return `<div class="empty">当前指标暂无店铺排名</div>`;
     return table(["店铺",definition.label,"咨询人数","咨询产值","转化率","平均响应","近4期趋势"],items.map((item,index)=>`<tr class="click-row" data-pre-platform="${safe(item.platform)}" data-pre-shop="${safe(item.shop)}"><td><span class="rank">${index+1}</span>${safe(item.shop)}<br><small>${safe(item.platform)}</small></td><td><strong>${definition.format(item.values[definition.key])}</strong></td><td>${fmt.format(item.values.consult)}</td><td>${money(item.values.salesPerConsult)}</td><td>${Number.isFinite(item.values.conversion)?`${item.values.conversion.toFixed(1)}%`:"—"}</td><td>${Number.isFinite(item.values.avg)?`${item.values.avg.toFixed(1)}秒`:"—"}</td><td><small>${safe(miniTrend(item.shop,definition.key))}</small></td></tr>`),"1120px");
   }
@@ -211,7 +251,7 @@
     const current=combine(filtered()),inferred=current.inquiryBase;
     return `<div class="funnel-flow"><div class="funnel-step"><span>01</span><small>咨询人数</small><strong>${fmt.format(current.consult)}</strong><i style="width:100%"></i></div><div class="funnel-arrow">→</div><div class="funnel-step"><span>02</span><small>推算有效询单</small><strong>${fmt.format(inferred)}</strong><i style="width:${Math.max(18,Math.min(100,inferred/Math.max(1,current.consult)*100))}%"></i></div><div class="funnel-arrow">→</div><div class="funnel-step"><span>03</span><small>询单成交人数</small><strong>${fmt.format(current.converted)}</strong><i style="width:${Math.max(18,Math.min(100,current.converted/Math.max(1,inferred)*100))}%"></i></div><div class="funnel-arrow">→</div><div class="funnel-step sales"><span>04</span><small>客服销售额</small><strong>${money(current.sales)}</strong><i style="width:100%"></i></div></div><div class="funnel-notes"><b>询单转化率 ${Number.isFinite(current.conversion)?current.conversion.toFixed(1)+"%":"—"}</b><b>每次咨询产值 ${money(current.salesPerConsult)}</b><b>日均咨询人数 ${fmt.format(current.daily)}</b></div>`;
   }
-  const radarColors=["#2f6fed","#22b98b","#f6ad17","#ed6549","#8a63d2","#25a5b8","#6b778c"];
+  const radarColors=preSeriesColors;
   function radar() {
     const level=state.radarMode;let items=groupItems(level).sort((a,b)=>b.values.sales-a.values.sales).slice(0,7);
     if(!items.length)return `<div class="empty">当前筛选没有可对比对象</div>`;
@@ -245,17 +285,17 @@
   function renderAnalysis() {
     const drillBack = state.platform || state.shop ? `<section class="pre-drill-bar"><div><span>当前下钻</span><strong>${safe(state.platform || "全部平台")}${state.shop?` › ${safe(state.shop)}`:""}</strong></div><button class="back" data-pre-back>← 返回上一级</button></section>` : "";
     body.innerHTML=`${drillBack}<section class="pre-conclusion"><strong>关键结论</strong><span>${safe(keyConclusion())}</span><em>点击指标卡、排名或异常项继续下钻</em></section>
-      <div class="grid"><article class="card"><div class="section-head"><div><span class="section-index">01 · 趋势</span><h2>${safe(metric().label)}趋势</h2><p class="subtitle">节点显示当期值，悬停查看环比与同比</p></div></div>${trendChart()}</article><article class="card"><div class="section-head"><div><span class="section-index">02 · 结构</span><h2>${state.platform?"店铺":"平台"}${safe(metric().label)}结构</h2><p class="subtitle">响应顶部筛选，点击可继续定位</p></div></div>${structureChart()}</article></div>
+      <div class="grid"><article class="card"><div class="section-head"><div><span class="section-index">01 · 趋势</span><h2>${safe(metric().label)}趋势</h2><p class="subtitle">默认4平台对比；点击节点可定位平台或店铺</p></div></div>${trendChart()}</article><article class="card"><div class="section-head"><div><span class="section-index">02 · 结构</span><h2>${state.platform?"店铺":"平台"}${safe(metric().label)}结构</h2><p class="subtitle">响应顶部筛选，点击可继续定位</p></div></div>${structureChart()}</article></div>
       <article class="card pre-section"><div class="section-head"><div><span class="section-index">03 · 转化链路</span><h2>咨询转化与销售产出</h2><p class="subtitle">将规模、转化和销售贡献放在同一条链路判断</p></div></div>${funnel()}</article>
-      <div class="grid equal pre-section"><article class="card"><div class="section-head"><div><span class="section-index">04 · 综合能力</span><h2>平台运营效率雷达</h2><p class="subtitle">归一化评分仅作结构对比</p></div><div class="radar-switch"><button data-radar-mode="platform" class="${state.radarMode==="platform"?"active":""}">平台</button><button data-radar-mode="shop" class="${state.radarMode==="shop"?"active":""}">店铺</button></div></div>${radar()}</article><article class="card"><div class="section-head"><div><span class="section-index">05 · 排名</span><h2>店铺${safe(metric().label)}排名</h2><p class="subtitle">默认按当前指标优先级排序，点击店铺下钻</p></div></div>${rankingTable()}</article></div>
+      <div class="grid equal pre-section"><article class="card"><div class="section-head"><div><span class="section-index">04 · 综合能力</span><h2>平台运营效率雷达</h2><p class="subtitle">归一化评分仅作结构对比</p></div><div class="radar-switch"><button data-radar-mode="platform" class="${state.radarMode==="platform"?"active":""}">平台</button><button data-radar-mode="shop" class="${state.radarMode==="shop"?"active":""}">店铺</button></div></div>${radar()}</article><article class="card"><div class="section-head"><div><span class="section-index">05 · TOP排名</span><h2>TOP 10 店铺${safe(metric().label)}排名</h2><p class="subtitle">随指标卡同步切换；${metric().inverse?"按数值升序，越低越优":"按数值降序"}，点击店铺下钻</p></div></div>${rankingTable()}</article></div>
       <article class="card pre-section"><div class="section-head"><div><span class="section-index">06 · 行动</span><h2>异常与机会清单</h2><p class="subtitle">基于最近两个完整周期自动识别量增效降、销售下滑和响应变慢</p></div></div>${opportunityList()}</article>
       <article class="card pre-section"><div class="section-head"><div><span class="section-index">07 · 明细</span><h2>店铺经营全指标明细</h2><p class="subtitle">点击店铺进入单店筛选；退款率异常不参与汇总和排名</p></div></div>${detailTable()}</article>`;
     bindTips();
   }
   function table(headers,rowHtml,minWidth="820px"){return `<div class="table-wrap"><table style="min-width:${minWidth}"><thead><tr>${headers.map(header=>`<th>${header}</th>`).join("")}</tr></thead><tbody>${rowHtml.join("")}</tbody></table></div>`;}
   function renderAudit(){const duplicates=D.audit.duplicates,refunds=D.audit.refundAnomalies.slice().sort((a,b)=>b.value-a.value);body.innerHTML=`<section class="audit-summary"><strong>数据健康提醒</strong><span>当前有 ${D.meta.duplicateGroups} 组重复记录、${D.meta.blankRows} 行核心指标为空、${D.meta.refundAnomalies} 条退款率超过100%。异常数据不参与正式经营判断。</span></section><div class="grid equal"><article class="card"><h2>重复与空行备查</h2><p class="subtitle">重复日数据不自动猜测保留项，已从正式汇总剔除</p>${table(["重复键","来源行"],duplicates.map(item=>`<tr><td>${safe(item.key)}</td><td>${item.rows.join("、")}</td></tr>`))}<div class="muted-box">另有 ${D.audit.blankRows.length} 行核心指标为空，未计入经营汇总。</div></article><article class="card"><h2>退款率异常备查</h2><p class="subtitle">原表数值大于100%，当前不用于汇总、雷达或绩效排名</p>${table(["日期 / 店铺","退款率","来源行"],refunds.map(item=>`<tr><td>${item.date}<br><small>${safe(item.platform)} / ${safe(item.shop)}</small></td><td class="bad">${item.value.toFixed(2)}%</td><td>${item.sourceRow}</td></tr>`))}</article></div><article class="card pre-section"><h2>口径与完整性说明</h2><div class="quality-grid"><div><strong>周期完整性</strong><p>各店共同完整截止日 ${D.meta.commonComplete}；${currentPartial()} 为部分周期。</p></div><div><strong>平台转化口径</strong><p>京东使用出库转化，其他平台主要使用询单口径，跨平台仅作经营观察。</p></div><div><strong>响应字段</strong><p>拼多多首次响应缺失，不参与首次响应排名与综合评分。</p></div><div><strong>销售占比</strong><p>有效填报覆盖率不足90%时显示“—”，避免部分月份放大。</p></div></div></article>`;}
-  function bindTips(){const tooltip=$("#tooltip");document.querySelectorAll("[data-pre-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.preTip);tooltip.innerHTML=`<b>${safe(data.period)}${data.partial?" · 部分周期":""}</b><br>${safe(data.label)}：${safe(data.value)}<br>环比：${pct(data.mom)}${state.grain==="month"?`<br>同比：${pct(data.yoy)}`:""}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});document.querySelectorAll("[data-radar-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.radarTip);tooltip.innerHTML=`<b>${safe(data.name)}</b><br>${data.axes.map(axis=>`${safe(axis.label)}：${safe(axis.value)}｜得分 ${axis.score}`).join("<br>")}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});}
-  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 页面版本 v20`;else if(workspace==="weekly")$("#dataStatus").textContent="上周复盘 · 各模块按自身最新成熟周复盘 · 页面版本 v20";else if(workspace==="returns"&&window.RETURN_REFUND_DATA)$("#dataStatus").textContent=`退货退款 ${window.RETURN_REFUND_DATA.meta.sourceMin} 至 ${window.RETURN_REFUND_DATA.meta.sourceMax} · 成熟月截止 ${window.RETURN_REFUND_DATA.meta.latestMatureMonth||"—"} · 页面版本 v20`;else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v20`;}
+  function bindTips(){const tooltip=$("#tooltip");document.querySelectorAll("[data-pre-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.preTip);tooltip.innerHTML=`<b>${data.series?`${safe(data.series)} · `:""}${safe(data.period)}${data.partial?" · 部分周期":""}</b><br>${safe(data.label)}：${safe(data.value)}<br>环比：${pct(data.mom)}${state.grain==="month"?`<br>同比：${pct(data.yoy)}`:""}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});document.querySelectorAll("[data-radar-tip]").forEach(node=>{node.onmouseenter=()=>{const data=JSON.parse(node.dataset.radarTip);tooltip.innerHTML=`<b>${safe(data.name)}</b><br>${data.axes.map(axis=>`${safe(axis.label)}：${safe(axis.value)}｜得分 ${axis.score}`).join("<br>")}`;tooltip.style.display="block";};node.onmousemove=event=>{tooltip.style.left=`${event.clientX+14}px`;tooltip.style.top=`${event.clientY+14}px`;};node.onmouseleave=()=>{tooltip.style.display="none";};});}
+  function updateStatus(){if(workspace==="pre")$("#dataStatus").textContent=`售前 ${D.meta.sourceMin} 至 ${D.meta.sourceMax} · 各店共同完整至 ${D.meta.commonComplete} · 页面版本 v22`;else if(workspace==="weekly")$("#dataStatus").textContent="上周复盘 · 各模块按自身最新成熟周复盘 · 页面版本 v22";else if(workspace==="returns"&&window.RETURN_REFUND_DATA)$("#dataStatus").textContent=`退货退款 ${window.RETURN_REFUND_DATA.meta.sourceMin} 至 ${window.RETURN_REFUND_DATA.meta.sourceMax} · 成熟月截止 ${window.RETURN_REFUND_DATA.meta.latestMatureMonth||"—"} · 页面版本 v22`;else if(window.AFTER_SALES_DATA)$("#dataStatus").textContent=`售后 ${window.AFTER_SALES_DATA.meta.afterSalesMin} 至 ${window.AFTER_SALES_DATA.meta.afterSalesMax} · 销售至 ${window.AFTER_SALES_DATA.meta.salesMax} · 页面版本 v22`;}
   function refresh(){refreshControls();renderKpis();if(state.page==="audit")renderAudit();else renderAnalysis();updateStatus();}
   if(!window.CS_THEME_BOUND){window.CS_THEME_BOUND=true;$("#themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";});}
   document.addEventListener("click",async event=>{const workspaceButton=event.target.closest("[data-workspace]");if(workspaceButton){workspace=workspaceButton.dataset.workspace;pre.hidden=workspace!=="pre";weekly.hidden=workspace!=="weekly";after.hidden=workspace!=="after";returns.hidden=workspace!=="returns";document.querySelectorAll("[data-workspace]").forEach(button=>button.classList.toggle("active",button.dataset.workspace===workspace));if(workspace==="after"||workspace==="weekly"){try{await ensureAfterSales();}catch{return;}}if(workspace==="returns"){try{await ensureReturnRefund();}catch{return;}window.RETURN_REFUND_APP?.render();}if(workspace==="weekly")window.WEEKLY_REVIEW_APP?.render();if(workspace==="pre")refresh();updateStatus();return;}const pageButton=event.target.closest("[data-pre-page]");if(pageButton){state.page=pageButton.dataset.prePage;refresh();return;}const metricButton=event.target.closest("[data-pre-metric]");if(metricButton){state.metric=metricButton.dataset.preMetric;refresh();return;}const grainButton=event.target.closest("[data-pre-grain]");if(grainButton){state.grain=grainButton.dataset.preGrain;setDefaultRange();refresh();return;}const radarButton=event.target.closest("[data-radar-mode]");if(radarButton){state.radarMode=radarButton.dataset.radarMode;refresh();return;}const back=event.target.closest("[data-pre-back]");if(back){if(state.shop)state.shop="";else state.platform="";refresh();return;}const drill=event.target.closest("[data-pre-shop], [data-pre-platform]");if(drill){if(drill.dataset.prePlatform)state.platform=drill.dataset.prePlatform;if(drill.dataset.preShop)state.shop=drill.dataset.preShop;refresh();}});

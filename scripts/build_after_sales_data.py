@@ -15,9 +15,10 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 AFTERSALES = Path(os.environ.get("AFTERSALES_XLSX", "/Users/koralgrey/Downloads/YH售后问题&打款登记.xlsx"))
 SALES = Path(os.environ.get("SALES_XLSX", "/Users/koralgrey/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/chenjiahui977450_57c0/msg/file/2026-08/周报(2).xlsx"))
-OUTPUT = ROOT / "data" / "after-sales-data.js"
-PRODUCT_OUTPUT = ROOT / "data" / "after-sales-product-sales.js"
-SHOP_SALES_OUTPUT = ROOT / "data" / "after-sales-shop-sales.js"
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(ROOT / "data")))
+OUTPUT = OUTPUT_DIR / "after-sales-data.js"
+PRODUCT_OUTPUT = OUTPUT_DIR / "after-sales-product-sales.js"
+SHOP_SALES_OUTPUT = OUTPUT_DIR / "after-sales-shop-sales.js"
 
 
 def text(v) -> str:

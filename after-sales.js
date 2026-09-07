@@ -22,7 +22,7 @@
     rateSort:{key:"count",dir:-1}, compSort:{key:"paidAmount",dir:-1}, actionSort:{key:"priority",dir:-1}
   };
 
-  const DATA_VERSION = "20260907-1";
+  const DATA_VERSION = "20260907-2";
   const dataRows = (type, grain=state.grain) => {
     const key=`${type}${grain === "month" ? "Month" : "Week"}`;
     if(type==="productSales") return window.AFTER_SALES_PRODUCT_SALES?.[key] || [];

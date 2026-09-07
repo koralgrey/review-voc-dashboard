@@ -10,8 +10,13 @@ const output = process.argv[3] || new URL("../data/pre-sales-data.js", import.me
 const blob = await FileBlob.load(source);
 const workbook = await SpreadsheetFile.importXlsx(blob);
 const sheet = workbook.worksheets.getItem("客服日维度");
-const values = sheet.getRange("A1:Q2395").values;
+const usedRange = sheet.getUsedRange(true) || sheet.getUsedRange();
+if (!usedRange) throw new Error("售前源表没有可读取的数据。");
+const values = usedRange.values;
 const headers = values[0].map(String);
+const requiredHeaders = ["时间", "平台", "店铺", "总咨询人数", "客服销售额(去退)", "客服销售占比(%)", "询单成交人数", "询单转化率(%)"];
+const missingHeaders = requiredHeaders.filter(header => !headers.includes(header));
+if (missingHeaders.length) throw new Error(`售前源表字段缺失：${missingHeaders.join("、")}`);
 
 const excelDate = value => {
   if (typeof value === "number") return new Date(Date.UTC(1899, 11, 30) + value * 86400000).toISOString().slice(0, 10);
