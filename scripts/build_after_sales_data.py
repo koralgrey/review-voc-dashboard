@@ -32,6 +32,17 @@ def code_text(v) -> str:
     return re.sub(r"\.0$", "", s)
 
 
+BRAND_ONLY_PRODUCT_NAMES = {"飞鱼", "东方雨虹", "雨虹"}
+
+
+def product_display_name(row: dict, code: str) -> str:
+    """优先使用运营产品简称，但品牌名不能作为商品名。"""
+    operating_name = text(row.get("运营产品简称"))
+    if operating_name and operating_name not in BRAND_ONLY_PRODUCT_NAMES:
+        return operating_name
+    return text(row.get("产品简称")) or text(row.get("产品描述")) or code
+
+
 def number(v) -> float:
     if v is None or v == "":
         return 0.0
@@ -202,7 +213,7 @@ def load_product_maps(sales_wb, after_wb):
             "code": code,
             "cat1": text(r.get("运营一级大类")) or "未分类",
             "cat2": text(r.get("运营二级品类")) or "未分类",
-            "product": text(r.get("运营产品简称")) or text(r.get("产品简称")) or text(r.get("产品描述")) or code,
+            "product": product_display_name(r, code),
             "spec": text(r.get("产品规格")),
             "barcode": code_text(r.get("69码")),
         }
