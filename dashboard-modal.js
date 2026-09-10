@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  let overlay;
+  let overlay, backHandler = null;
 
   function ensureModal() {
     if (overlay) return overlay;
@@ -23,7 +23,8 @@
       </section>`;
     document.body.appendChild(overlay);
     overlay.addEventListener("click", event => {
-      if (event.target === overlay || event.target.closest(".dashboard-modal-close, .dashboard-modal-back")) close();
+      if (event.target.closest(".dashboard-modal-back")) { if (backHandler) backHandler(); else close(); return; }
+      if (event.target === overlay || event.target.closest(".dashboard-modal-close")) close();
     });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && !overlay.hidden) close();
@@ -31,13 +32,15 @@
     return overlay;
   }
 
-  function open({title, subtitle = "", html = ""}) {
+  function open({title, subtitle = "", html = "", onBack = null}) {
     const node = ensureModal();
     node.querySelector("#dashboardModalTitle").textContent = title;
     const subtitleNode = node.querySelector("#dashboardModalSubtitle");
     subtitleNode.textContent = subtitle;
     subtitleNode.hidden = !subtitle;
     node.querySelector("#dashboardModalBody").innerHTML = html;
+    backHandler = typeof onBack === "function" ? onBack : null;
+    node.querySelector(".dashboard-modal-back").hidden = !backHandler;
     node.hidden = false;
     document.body.classList.add("modal-open");
     node.querySelector(".dashboard-modal-close").focus();
@@ -46,6 +49,7 @@
   function close() {
     if (!overlay) return;
     overlay.hidden = true;
+    backHandler = null;
     document.body.classList.remove("modal-open");
   }
 

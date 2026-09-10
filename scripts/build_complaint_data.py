@@ -27,6 +27,7 @@ TYPE_RULES = [
     ("施工与使用指导", re.compile(r"施工|使用|操作|涂刷|基层|兑水|加水|配比|比例|搅拌|养护|固砂|咨询|怎么用|用法")),
     ("退换与赔付诉求", re.compile(r"退货|退款|退换|换货|赔偿|赔付|补偿|补发")),
 ]
+DETAIL_KEYWORDS = ["客服", "态度", "回复", "沟通", "联系不上", "无人处理", "推诿", "服务", "物流", "快递", "发货", "少发", "漏发", "错发", "丢件", "运输", "送货", "包装", "漏液", "渗漏", "破桶", "爆桶", "漏桶", "桶破", "破损", "撒漏", "价格", "价保", "降价", "优惠", "赠品", "活动", "差价", "质量", "发霉", "变质", "不干", "不固化", "脱落", "起皮", "开裂", "裂纹", "漏水", "渗水", "不防水", "色差", "掉色", "生锈", "腐蚀", "异味", "堵塞", "鼓包", "起泡", "失效", "瑕疵", "施工", "使用", "操作", "涂刷", "基层", "兑水", "加水", "配比", "比例", "搅拌", "养护", "固砂", "咨询", "怎么用", "用法", "退货", "退款", "退换", "换货", "赔偿", "赔付", "补偿", "补发"]
 
 
 def plain(value) -> str:
@@ -48,6 +49,16 @@ def classify(detail: str, product: str) -> str:
         if pattern.search(joined):
             return label
     return "其他/待核实"
+
+
+def detail_tags(detail: str) -> list[str]:
+    tags = []
+    for keyword in DETAIL_KEYWORDS:
+        if keyword in detail and keyword not in tags:
+            tags.append(keyword)
+        if len(tags) == 4:
+            break
+    return tags or ["未提取到标准关键词"]
 
 
 def clean_product(value: str) -> str:
@@ -145,7 +156,8 @@ def build(records):
         if ticket:
             ticket_ids.append(ticket)
         safe_rows.append({"ticket": ticket, "date": complaint_date, "type": classify(detail, product), "product": product,
-                          "status": status, "result": result, "platform": platform_for(shop), "shop": shop})
+                          "tags": detail_tags(detail), "status": status, "result": result,
+                          "platform": platform_for(shop), "shop": shop})
 
     source_rows = len(safe_rows)
     seen_tickets = set()
@@ -232,6 +244,8 @@ def build(records):
         "recentProductWeekly": recent_rows(product_by_week),
         "recentChannelWeeks": recent_weeks,
         "recentChannelWeekly": recent_rows(channel_by_week),
+        "records": [[row["date"], row["product"], row["type"], row["tags"], row["result"],
+                     int(row["status"] != "未同步"), row["platform"], row["shop"]] for row in safe_rows],
     }
 
 
