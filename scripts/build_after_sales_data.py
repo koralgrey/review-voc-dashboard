@@ -328,15 +328,17 @@ def main():
                     "spec": "",
                 }
             issue, confidence = classify(r)
-            common_m = ("period", m, "cat1", info["cat1"], "cat2", info["cat2"], "issue", issue,
-                        "product", info["product"], "code", info.get("code", code), "confidence", confidence)
-            common_w = ("period", w, "cat1", info["cat1"], "cat2", info["cat2"], "issue", issue,
-                        "product", info["product"], "code", info.get("code", code), "confidence", confidence)
             record_type = text(r.get("🗂登记类型"))
             amount = number(r.get("💰补偿 / 打款金额"))
             store = text(r.get("店铺")) or "未填写"
             platform = aftersales_platform(store)
             skey = shop_key(store, platform)
+            common_m = ("period", m, "cat1", info["cat1"], "cat2", info["cat2"], "issue", issue,
+                        "product", info["product"], "code", info.get("code", code), "confidence", confidence,
+                        "platform", platform, "shop", store, "shopKey", skey)
+            common_w = ("period", w, "cat1", info["cat1"], "cat2", info["cat2"], "issue", issue,
+                        "product", info["product"], "code", info.get("code", code), "confidence", confidence,
+                        "platform", platform, "shop", store, "shopKey", skey)
             paid = bool(parse_date(r.get("✅打款时间")))
             payment_status = "已打款" if paid else "未打款"
             if record_type == "售后登记":
@@ -361,8 +363,7 @@ def main():
                         "sourceRow": f"{sheet_name}!{row_no}",
                     })
                 else:
-                    detail = ("platform", platform, "shop", store, "shopKey", skey,
-                              "recordType", record_type or "未填写", "paymentStatus", payment_status)
+                    detail = ("recordType", record_type or "未填写", "paymentStatus", payment_status)
                     cm = common_m + detail
                     cw = common_w + detail
                     add(comp_m, cm, count=1, amount=amount, paid_amount=amount if paid else 0,

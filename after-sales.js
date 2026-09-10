@@ -3,7 +3,7 @@
   const D = window.AFTER_SALES_DATA;
   if (!D) return;
   const $ = (s) => document.querySelector(s);
-  const body = $("#dashboardBody"), kpis = $("#kpis"), issueSelect = $("#issueSelect"), rangeSelect = $("#rangeSelect");
+  const body = $("#dashboardBody"), kpis = $("#kpis"), issueSelect = $("#issueSelect"), rangeSelect = $("#rangeSelect"), afterPlatform = $("#afterPlatform"), afterShop = $("#afterShop");
   const fmt = new Intl.NumberFormat("zh-CN", {maximumFractionDigits: 1});
   const money = (n) => `¥${fmt.format(Number(n || 0))}`;
   const pct = (n) => Number.isFinite(n) ? `${n >= 0 ? "+" : ""}${n.toFixed(1)}%` : "—";
@@ -22,7 +22,7 @@
     rateSort:{key:"count",dir:-1}, compSort:{key:"paidAmount",dir:-1}, actionSort:{key:"priority",dir:-1}
   };
 
-  const DATA_VERSION = "20260907-4";
+  const DATA_VERSION = "20260910-1";
   const dataRows = (type, grain=state.grain) => {
     const key=`${type}${grain === "month" ? "Month" : "Week"}`;
     if(type==="productSales") return window.AFTER_SALES_PRODUCT_SALES?.[key] || [];
@@ -121,11 +121,12 @@
   function validComparison(periods,previous,grain=state.grain){return periods.length>0&&previous.length===periods.length&&periods.every(p=>isCompleteIssuePeriod(p,grain))&&previous.every(p=>isCompleteIssuePeriod(p,grain));}
   function validIssueComparison(periods,previous,grain=state.grain){return periods.length>0&&previous.length===periods.length&&periods.every(p=>isCompleteAfterSalesPeriod(p,grain))&&previous.every(p=>isCompleteAfterSalesPeriod(p,grain));}
   const eligible = periods => periods.filter(p=>isCompleteIssuePeriod(p,state.grain));
+  const channelMatch = r => (!state.compPlatform||r.platform===state.compPlatform)&&(!state.compShop||r.shop===state.compShop);
   const rowIds=new WeakMap();let rowId=0;const filterCache=new Map();
   function filtered(rows, periods=periodsFor(), opts={}){
-    if(!rowIds.has(rows))rowIds.set(rows,++rowId);const product=opts.product??state.product,key=`${rowIds.get(rows)}|${periods.join(",")}|${state.cat1}|${state.cat2}|${state.issue}|${product}`;
+    if(!rowIds.has(rows))rowIds.set(rows,++rowId);const product=opts.product??state.product,key=`${rowIds.get(rows)}|${periods.join(",")}|${state.compPlatform}|${state.compShop}|${state.cat1}|${state.cat2}|${state.issue}|${product}`;
     if(filterCache.has(key))return filterCache.get(key);const periodSet=new Set(periods);
-    const result=rows.filter(r => periodSet.has(r.period)&&(!state.cat1 || r.cat1===state.cat1)&&(!state.cat2 || r.cat2===state.cat2)&&(!state.issue || r.issue===state.issue)&&(!product || r.product===product));
+    const result=rows.filter(r => periodSet.has(r.period)&&(!state.compPlatform||r.platform===state.compPlatform)&&(!state.compShop||r.shop===state.compShop)&&(!state.cat1 || r.cat1===state.cat1)&&(!state.cat2 || r.cat2===state.cat2)&&(!state.issue || r.issue===state.issue)&&(!product || r.product===product));
     if(filterCache.size>500)filterCache.clear();filterCache.set(key,result);return result;
   }
   const compPeriods=()=>state.compMonth&&state.grain==="month"?[state.compMonth]:periodsFor();
@@ -135,6 +136,7 @@
   }
   const compStartLevel=()=>state.compShop?"categories":state.compPlatform?"shops":"platforms";
   function salesMetrics(periods=periodsFor(),cat1=state.cat1,cat2=state.cat2,product=state.product,platform="",shopKey="",code=""){
+    if(product&&(platform||shopKey))return {qty:0,amount:0};
     let mode=product?"product":(platform||shopKey)?"shop":"category",key="all";
     if(product)key=code?`pc|${cat1}|${cat2}|${product}|${code}`:`p|${cat1}|${cat2}|${product}`;
     else if(shopKey)key=cat2?`shc2|${platform}|${shopKey}|${cat1}|${cat2}`:cat1?`shc1|${platform}|${shopKey}|${cat1}`:`sh|${platform}|${shopKey}`;
@@ -142,10 +144,10 @@
     else if(cat2)key=`c2|${cat1}|${cat2}`;else if(cat1)key=`c1|${cat1}`;
     return salesIndex(periods,mode).get(key)||{qty:0,amount:0};
   }
-  function salesAmount(periods=periodsFor(),cat1=state.cat1,cat2=state.cat2,product=state.product,platform="",shopKey="",code=""){return salesMetrics(periods,cat1,cat2,product,platform,shopKey,code).amount;}
+  function salesAmount(periods=periodsFor(),cat1=state.cat1,cat2=state.cat2,product=state.product,platform="",shopKey="",code=""){return salesMetrics(periods,cat1,cat2,product,platform||state.compPlatform,shopKey||state.compShopKey,code).amount;}
   function rateFor(count, periods=periodsFor(), cat1=state.cat1, cat2=state.cat2, product=state.product, code=""){
     const ep=eligible(periods); if(!ep.length) return NaN;
-    const amount=salesAmount(ep,cat1,cat2,product,"","",code); return amount>0 ? count/amount*10000 : NaN;
+    const amount=salesAmount(ep,cat1,cat2,product,state.compPlatform,state.compShopKey,code); return amount>0 ? count/amount*10000 : NaN;
   }
 
   function createCombo(el, allLabel, getOptions, getter, setter){
@@ -160,7 +162,7 @@
     el._render=render; render();
   }
   const cat1Combo=$("#cat1Combo"), cat2Combo=$("#cat2Combo");
-  const categoryRows=()=>dataRows("issues");
+  const categoryRows=()=>dataRows("issues").filter(r=>(!state.compPlatform||r.platform===state.compPlatform)&&(!state.compShop||r.shop===state.compShop));
   createCombo(cat1Combo,"全部大类",()=>[...new Set(categoryRows().map(r=>r.cat1))].filter(Boolean).sort(),()=>state.cat1,v=>{state.cat1=v;state.cat2="";state.issue="";resetDrills();});
   createCombo(cat2Combo,"全部品类",()=>[...new Set(categoryRows().filter(r=>!state.cat1||r.cat1===state.cat1).map(r=>r.cat2))].filter(Boolean).sort(),()=>state.cat2,v=>{state.cat2=v;state.issue="";resetDrills();});
   document.addEventListener("click",e=>{if(!e.target.closest(".combo")) document.querySelectorAll(".combo.open").forEach(x=>x.classList.remove("open"));});
@@ -168,7 +170,7 @@
   function issueOptions(){
     const compMode=state.module==="comp"||(state.module==="action"&&state.actionTab==="finance"),periods=compMode&&state.module==="comp"?compPeriods():periodsFor(); let rows;
     if(compMode) rows=dataRows("comp"); else rows=dataRows("issues");
-    rows=compMode&&state.module==="comp"?filteredComp(rows,periods,{product:""}):rows.filter(r=>periods.includes(r.period)&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
+    rows=compMode&&state.module==="comp"?filteredComp(rows,periods,{product:""}):rows.filter(r=>periods.includes(r.period)&&(!state.compPlatform||r.platform===state.compPlatform)&&(!state.compShop||r.shop===state.compShop)&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
     const totalCount=sum(rows,"count"), totalAmount=sum(rows,"amount"), items=group(rows,"issue");
     items.sort((a,b)=>compMode?b.amount-a.amount:b.count-a.count);
     const label=compMode ? `全部问题（${fmt.format(totalCount)}笔 / ${money(totalAmount)}）` : `全部问题（${fmt.format(totalCount)}）`;
@@ -178,6 +180,11 @@
   }
   function resetDrills(){state.product="";state.causeLevel="issues";state.causeIssue="";state.rateLevel="categories";state.rateCategory=null;state.compLevel=compStartLevel();state.compCategory=null;state.compIssue="";}
   function refreshControls(){
+    const issueRows=dataRows("issues"),platforms=[...new Set(issueRows.map(r=>r.platform))].filter(Boolean).sort(),shops=[...new Set(issueRows.filter(r=>!state.compPlatform||r.platform===state.compPlatform).map(r=>r.shop))].filter(Boolean).sort();
+    if(state.compPlatform&&!platforms.includes(state.compPlatform)){state.compPlatform="";state.compShop="";state.compShopKey="";}
+    if(state.compShop&&!shops.includes(state.compShop)){state.compShop="";state.compShopKey="";}
+    afterPlatform.innerHTML=`<option value="">全部平台</option>`+platforms.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join("");afterPlatform.value=state.compPlatform;
+    afterShop.innerHTML=`<option value="">全部店铺</option>`+shops.map(value=>`<option value="${safe(value)}">${safe(value)}</option>`).join("");afterShop.value=state.compShop;
     cat1Combo._render();cat2Combo._render();
     const opts=rangeOptions();if(!opts.some(x=>x[0]===state.range))state.range=opts[0][0];
     rangeSelect.innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");rangeSelect.value=state.range;issueOptions();
@@ -205,7 +212,7 @@
 
   const periodSpan=periods=>periods.length?(periods.length===1?periods[0]:`${periods[0]} 至 ${periods.at(-1)}`):"暂无可用周期";
   function analysisScope(){
-    const periods=periodsFor(),parts=[state.cat1||"全部大类",state.cat2||"全部品类",state.issue||"全部问题"];
+    const periods=periodsFor(),parts=[state.compPlatform||"全部平台",state.compShop||"全部店铺",state.cat1||"全部大类",state.cat2||"全部品类",state.issue||"全部问题"];
     if(state.product)parts.push(state.product);
     return `<section class="after-scope-strip"><div><span>当前分析范围</span><strong>${safe(periodSpan(periods))} · ${safe(parts.join(" · "))}</strong></div><small>${state.grain==="week"?"周度观察":"月度观察"} · 售后截至 ${safe(D.meta.afterSalesMax)} · 销售截至 ${safe(D.meta.salesMax)}</small></section>`;
   }
@@ -279,7 +286,7 @@
     periods.forEach((p,i)=>{
       const cm=compared(p,counts[i],1,"count"), cy=compared(p,counts[i],state.grain==="month"?12:52,"count");
       const rm=compared(p,rates[i],1,"rate"), ry=compared(p,rates[i],state.grain==="month"?12:52,"rate");
-      const canImbalance=Boolean(isCompleteIssuePeriod(p)&&state.cat1&&!state.issue&&!state.product&&!state.causeIssue),raw=dataRows("issues"),parentCount=canImbalance?sum(raw.filter(r=>r.period===p&&(!state.cat2||r.cat1===state.cat1)),"count"):0,afterShare=parentCount>0?counts[i]/parentCount*100:NaN,childSales=canImbalance?salesAmount([p],state.cat1,state.cat2,""):0,parentSales=canImbalance?(state.cat2?salesAmount([p],state.cat1,"",""):salesAmount([p],"","","")):0,salesAmountShare=parentSales>0?childSales/parentSales*100:NaN,burdenIndex=salesAmountShare>0?afterShare/salesAmountShare:NaN;
+      const canImbalance=Boolean(isCompleteIssuePeriod(p)&&state.cat1&&!state.issue&&!state.product&&!state.causeIssue),raw=dataRows("issues"),parentCount=canImbalance?sum(raw.filter(r=>r.period===p&&channelMatch(r)&&(!state.cat2||r.cat1===state.cat1)),"count"):0,afterShare=parentCount>0?counts[i]/parentCount*100:NaN,childSales=canImbalance?salesAmount([p],state.cat1,state.cat2,""):0,parentSales=canImbalance?(state.cat2?salesAmount([p],state.cat1,"",""):salesAmount([p],"","","")):0,salesAmountShare=parentSales>0?childSales/parentSales*100:NaN,burdenIndex=salesAmountShare>0?afterShare/salesAmountShare:NaN;
       const tip=safe(JSON.stringify({p,count:counts[i],rate:rates[i],cm,cy,rm,ry,afterShare,salesAmountShare,burdenIndex}));
       svg+=`<text x="${x(i)}" y="${H-18}" text-anchor="middle" fill="var(--muted)" font-size="13">${safe(p.replace(/^\d{4}-/,""))}</text>`;
       svg+=`<g class="chart-node" data-tip="${tip}"><circle cx="${x(i)}" cy="${yc(counts[i])}" r="6" fill="white" stroke="var(--red)" stroke-width="4"/><text x="${x(i)}" y="${Math.max(18,yc(counts[i])-11)}" text-anchor="middle" fill="var(--red)" font-weight="800" font-size="12">${fmt.format(counts[i])}</text></g>`;
@@ -292,7 +299,7 @@
   }
   function imbalanceTrend(){
     if(!state.cat1&&!state.cat2)return `<div class="muted-box">选择一级大类或二级品类后，这里显示“售后起数占比 ÷ 销售额占比”的售后负担指数趋势。</div>`;
-    const periods=periodsFor(),raw=dataRows("issues"),values=periods.map(p=>{if(!isCompleteIssuePeriod(p))return {afterShare:NaN,salesShare:NaN,index:NaN};const child=sum(raw.filter(r=>r.period===p&&r.cat1===state.cat1&&(!state.cat2||r.cat2===state.cat2)),"count"),parent=sum(raw.filter(r=>r.period===p&&(!state.cat2||r.cat1===state.cat1)),"count"),childSales=salesAmount([p],state.cat1,state.cat2,""),parentSales=state.cat2?salesAmount([p],state.cat1,"",""):salesAmount([p],"","","");const afterShare=parent>0?child/parent*100:NaN,salesShare=parentSales>0?childSales/parentSales*100:NaN;return {afterShare,salesShare,index:salesShare>0?afterShare/salesShare:NaN}});
+    const periods=periodsFor(),raw=dataRows("issues"),values=periods.map(p=>{if(!isCompleteIssuePeriod(p))return {afterShare:NaN,salesShare:NaN,index:NaN};const child=sum(raw.filter(r=>r.period===p&&channelMatch(r)&&r.cat1===state.cat1&&(!state.cat2||r.cat2===state.cat2)),"count"),parent=sum(raw.filter(r=>r.period===p&&channelMatch(r)&&(!state.cat2||r.cat1===state.cat1)),"count"),childSales=salesAmount([p],state.cat1,state.cat2,""),parentSales=state.cat2?salesAmount([p],state.cat1,"",""):salesAmount([p],"","","");const afterShare=parent>0?child/parent*100:NaN,salesShare=parentSales>0?childSales/parentSales*100:NaN;return {afterShare,salesShare,index:salesShare>0?afterShare/salesShare:NaN}});
     const W=1000,H=190,L=65,R=60,T=34,B=42,iw=W-L-R,ih=H-T-B,max=Math.max(2,...values.map(v=>v.index).filter(Number.isFinite)),x=i=>L+(periods.length===1?iw/2:i*iw/(periods.length-1)),y=v=>T+ih-v/max*ih,path=values.map((v,i)=>Number.isFinite(v.index)?`${i===0||!Number.isFinite(values[i-1].index)?"M":"L"}${x(i)},${y(v.index)}`:"").join(" ");
     let svg=`<div class="share-title"><b>售后负担指数趋势</b><span>大于 1 表示售后起数占比高于销售额贡献</span></div><svg class="share-svg" viewBox="0 0 ${W} ${H}"><line x1="${L}" y1="${y(1)}" x2="${W-R}" y2="${y(1)}" stroke="var(--orange)" stroke-dasharray="6 6"/><text x="${W-R}" y="${y(1)-7}" text-anchor="end" fill="var(--orange)" font-size="11">基准 1.0</text><path d="${path}" fill="none" stroke="var(--blue)" stroke-width="4"/>`;
     periods.forEach((p,i)=>{const v=values[i];if(Number.isFinite(v.index)){const tip=safe(JSON.stringify({kind:"imbalanceTrend",p,afterShare:v.afterShare,salesShare:v.salesShare,index:v.index}));svg+=`<g class="chart-node" data-tip="${tip}"><circle cx="${x(i)}" cy="${y(v.index)}" r="5" fill="white" stroke="var(--blue)" stroke-width="3"/><text x="${x(i)}" y="${Math.max(15,y(v.index)-10)}" text-anchor="middle" fill="var(--blue)" font-weight="800" font-size="12">${v.index.toFixed(2)}</text></g>`}svg+=`<text x="${x(i)}" y="${H-12}" text-anchor="middle" fill="var(--muted)" font-size="12">${safe(p.replace(/^\d{4}-/,""))}</text>`});
@@ -321,7 +328,7 @@
 
   function openCauseDrill(issue){
     if(!window.DASHBOARD_MODAL)return;
-    const periods=periodsFor(),previous=previousPeriods(periods),comparable=validIssueComparison(periods,previous),source=dataRows("issues"),weeklySource=dataRows("issues","week"),scope=r=>(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2)&&r.issue===issue;
+    const periods=periodsFor(),previous=previousPeriods(periods),comparable=validIssueComparison(periods,previous),source=dataRows("issues"),weeklySource=dataRows("issues","week"),scope=r=>channelMatch(r)&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2)&&r.issue===issue;
     const currentRows=source.filter(r=>periods.includes(r.period)&&scope(r)),previousRows=source.filter(r=>previous.includes(r.period)&&scope(r)),total=sum(currentRows,"count"),weeks=reviewWeeksForCurrentSelection(),byKey=(rows)=>{const map=new Map();rows.forEach(r=>{const key=`${r.cat2||"未分类"}|§${r.product||"未填写商品"}|§${r.code||""}`,x=map.get(key)||{cat2:r.cat2||"未分类",product:r.product||"未填写商品",code:r.code||"",count:0};x.count+=Number(r.count||0);map.set(key,x);});return map;},currentMap=byKey(currentRows),previousMap=byKey(previousRows);
     const rows=[...currentMap.entries()].map(([key,x])=>{const last=previousMap.get(key)?.count||0,trendValues=weeks.map(p=>sum(weeklySource.filter(r=>r.period===p&&scope(r)&&r.cat2===x.cat2&&r.product===x.product&&String(r.code||"")===String(x.code||"")),"count"));return {...x,last,delta:comparable?change(x.count,last):NaN,trendValues};}).sort((a,b)=>b.count-a.count).slice(0,10),categoryCurrent=new Map(),categoryPrevious=new Map();
     currentRows.forEach(r=>categoryCurrent.set(r.cat2||"未分类",(categoryCurrent.get(r.cat2||"未分类")||0)+Number(r.count||0)));previousRows.forEach(r=>categoryPrevious.set(r.cat2||"未分类",(categoryPrevious.get(r.cat2||"未分类")||0)+Number(r.count||0)));
@@ -334,14 +341,14 @@
   function rateRanking(){
     const periods=periodsFor(), issues=dataRows("issues"), product="";
     if(state.rateLevel==="reasons"&&state.rateCategory){
-      const c=state.rateCategory, rr=issues.filter(r=>periods.includes(r.period)&&r[c.key]===c.value&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
+      const c=state.rateCategory, rr=issues.filter(r=>periods.includes(r.period)&&channelMatch(r)&&r[c.key]===c.value&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
       let rows=group(rr,"issue"), rateMap=new Map(group(rr.filter(r=>eligible(periods).includes(r.period)),"issue").map(x=>[x.issue,x.count]));const amount=salesAmount(eligible(periods),c.key==="cat1"?c.value:state.cat1,c.key==="cat2"?c.value:state.cat2,"");rows.forEach(x=>x.rate=amount>0?(rateMap.get(x.issue)||0)/amount*10000:NaN);rows.sort((a,b)=>(a[state.rateSort.key]||0)-(b[state.rateSort.key]||0)).reverse();if(state.rateSort.dir>0)rows.reverse();
       let cumulative=0,total=sum(rows,"count");return `<div class="section-head"><div><h2>${safe(c.value)}：售后原因下钻</h2><p class="subtitle">默认按售后起数降序，核心问题以累计80%标记</p></div><button class="back" data-action="rate-back">← 返回品类排名</button></div>${sortControls("rate",state.rateSort,[["count","售后起数"],["rate","每万元售后起数"]])}`+table(["售后原因","售后起数","占比","每万元售后起数","问题集中度"],rows.map((x,i)=>{const before=cumulative;cumulative+=x.count;return `<tr><td><span class="rank">${i+1}</span>${safe(x.issue)}</td><td>${fmt.format(x.count)}</td><td>${(x.count/Math.max(1,total)*100).toFixed(1)}%</td><td><span class="pill">${Number.isFinite(x.rate)?x.rate.toFixed(2):"—"}</span></td><td>${before/Math.max(1,total)<.8?'<span class="tag red">Pareto核心</span>':"长尾"}</td></tr>`})) + `<div class="muted-box">每万元该原因售后起数 = 该原因售后起数 ÷ 该品类同期电商销售额 × 10,000。它衡量销售额承担的售后事件，建议同时看绝对起数。</div>`;
     }
     const level=state.cat1?"cat2":"cat1", label=level==="cat1"?"一级大类":"二级品类";
-    const scoped=issues.filter(r=>periods.includes(r.period)&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
+    const scoped=issues.filter(r=>periods.includes(r.period)&&channelMatch(r)&&(!state.cat1||r.cat1===state.cat1)&&(!state.cat2||r.cat2===state.cat2));
     const ep=eligible(periods),parentSales=salesAmount(ep,state.cat1,"",""),comparableScoped=scoped.filter(r=>ep.includes(r.period)),totalComparableCount=sum(comparableScoped,"count"),rateMap=new Map(group(comparableScoped,level).map(x=>[x[level],x.count]));let rows=group(scoped,level);if(state.rateSort.key==="salesShare")state.rateSort.key="burdenIndex";if(state.rateSort.key==="overIndex")state.rateSort.key="burdenIndex";
-    rows.forEach(x=>{const c1=level==="cat1"?x.cat1:state.cat1,c2=level==="cat2"?x.cat2:"";const sm=salesMetrics(ep,c1,c2,"");x.salesAmount=sm.amount;x.comparableCount=rateMap.get(x[level])||0;x.afterShare=totalComparableCount>0?x.comparableCount/totalComparableCount*100:NaN;x.salesAmountShare=parentSales>0?x.salesAmount/parentSales*100:NaN;x.burdenIndex=x.salesAmountShare>0?x.afterShare/x.salesAmountShare:NaN;x.rate=x.salesAmount>0?x.comparableCount/x.salesAmount*10000:NaN});
+    rows.forEach(x=>{const c1=level==="cat1"?x.cat1:state.cat1,c2=level==="cat2"?x.cat2:"";const sm=salesMetrics(ep,c1,c2,"",state.compPlatform,state.compShopKey);x.salesAmount=sm.amount;x.comparableCount=rateMap.get(x[level])||0;x.afterShare=totalComparableCount>0?x.comparableCount/totalComparableCount*100:NaN;x.salesAmountShare=parentSales>0?x.salesAmount/parentSales*100:NaN;x.burdenIndex=x.salesAmountShare>0?x.afterShare/x.salesAmountShare:NaN;x.rate=x.salesAmount>0?x.comparableCount/x.salesAmount*10000:NaN});
     rows.sort((a,b)=>(a[state.rateSort.key]||0)-(b[state.rateSort.key]||0));if(state.rateSort.dir<0)rows.reverse();
     return `<div class="section-head"><div><h2>${label}排名</h2><p class="subtitle">售后负担指数 = 可比期售后起数占比 ÷ 销售额占比</p></div></div>${sortControls("rate",state.rateSort,[["count","售后起数"],["rate","每万元售后起数"],["burdenIndex","售后负担指数"]])}`+table(["品类","所选期售后起数","可比期售后起数占比","可比期电商销售额","销售额占比","每万元售后起数","售后负担指数","原因下钻"],rows.map((x,i)=>`<tr><td><span class="rank">${i+1}</span>${safe(x[level])}</td><td>${fmt.format(x.count)}</td><td>${Number.isFinite(x.afterShare)?`${x.afterShare.toFixed(1)}%`:"—"}</td><td>${money(x.salesAmount)}</td><td>${Number.isFinite(x.salesAmountShare)?`${x.salesAmountShare.toFixed(1)}%`:"—"}</td><td><span class="pill">${Number.isFinite(x.rate)?x.rate.toFixed(2):"—"}</span></td><td>${Number.isFinite(x.burdenIndex)?`<span class="index-pill ${x.burdenIndex>1.5?"risk":x.burdenIndex>1.2?"watch":""}">${x.burdenIndex.toFixed(2)}</span>`:"—"}</td><td><button class="drill" data-action="rate-drill" data-key="${level}" data-value="${safe(x[level])}">查看原因 ›</button></td></tr>`),"1320px");
   }
@@ -349,9 +356,9 @@
 
   const selectHtml=(id,label,value,items)=>`<label>${label}<select id="${id}">${items.map(([v,l])=>`<option value="${safe(v)}" ${v===value?"selected":""}>${safe(l)}</option>`).join("")}</select></label>`;
   function compFilterBar(){
-    const all=dataRows("comp","month"),months=issuePeriods("month").slice().reverse(),platforms=group(all,"platform").sort((a,b)=>b.paidAmount-a.paidAmount).map(x=>x.platform),shops=group(all.filter(r=>!state.compPlatform||r.platform===state.compPlatform),"shop").sort((a,b)=>b.paidAmount-a.paidAmount).map(x=>x.shop);
+    const months=issuePeriods("month").slice().reverse();
     const monthItems=state.grain==="month"?[["","跟随上方时间范围"],...months.map(x=>[x,x])]:[["","周趋势跟随上方时间范围"]];
-    return `<div class="comp-filters">${selectHtml("compMonth","登记月份",state.compMonth,monthItems)}${selectHtml("compPlatform","平台",state.compPlatform,[["","全部平台"],...platforms.map(x=>[x,x])])}${selectHtml("compShop","店铺",state.compShop,[["","全部店铺"],...shops.map(x=>[x,x])])}${selectHtml("compPaymentStatus","打款状态",state.compPaymentStatus,[["","全部状态"],["已打款","已打款"],["未打款","未打款"]])}${selectHtml("compRecordType","登记类型",state.compRecordType,[["","全部类型"],["售后登记","售后登记"],["打款登记","打款登记"]])}</div>`;
+    return `<div class="comp-filters">${selectHtml("compMonth","登记月份",state.compMonth,monthItems)}${selectHtml("compPaymentStatus","打款状态",state.compPaymentStatus,[["","全部状态"],["已打款","已打款"],["未打款","未打款"]])}${selectHtml("compRecordType","登记类型",state.compRecordType,[["","全部类型"],["售后登记","售后登记"],["打款登记","打款登记"]])}</div>`;
   }
   function compTable(){
     const periods=compPeriods(),completePeriods=eligible(periods),base=filteredComp(dataRows("comp"),periods,{product:""}),eligibleBase=filteredComp(dataRows("comp"),completePeriods,{product:""}),prev=previousPeriods(periods),prevRows=validIssueComparison(periods,prev)?filteredComp(dataRows("comp"),prev,{product:""}):[];let rows,title,back="",nextAction="",key,scopeRows=base,scopeEligible=eligibleBase,scopePrev=prevRows;
@@ -433,6 +440,8 @@
     if(e.target.closest("#themeBtn")&&!window.CS_THEME_BOUND){document.body.classList.toggle("dark");$("#themeBtn").textContent=document.body.classList.contains("dark")?"浅色模式":"深色模式";}
   },true);
   document.addEventListener("change",e=>{
+    if(e.target===afterPlatform){state.compPlatform=afterPlatform.value;state.compShop="";state.compShopKey="";state.product="";resetDrills();ensureShopSalesData().then(()=>{salesIndexCache.clear();refresh();});return;}
+    if(e.target===afterShop){state.compShop=afterShop.value;const sample=dataRows("issues").find(r=>r.shop===state.compShop&&(!state.compPlatform||r.platform===state.compPlatform));state.compShopKey=sample?.shopKey||"";if(state.compShop&&sample&&!state.compPlatform)state.compPlatform=sample.platform;state.product="";resetDrills();ensureShopSalesData().then(()=>{salesIndexCache.clear();refresh();});return;}
     if(e.target===rangeSelect){state.range=rangeSelect.value;state.issue="";state.product="";resetDrills();refresh();}
     if(e.target===issueSelect){state.issue=issueSelect.value;state.product="";resetDrills();refresh();}
     if(e.target.id==="compMonth"){state.compMonth=e.target.value;state.product="";state.compCategory=null;state.compIssue="";state.compLevel=compStartLevel();refresh();}
